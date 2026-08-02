@@ -43,6 +43,19 @@ export type SignalingMessage =
       peer_id: string
     }
   | {
+      type: 'chat-message'
+      text: string
+      from?: string
+      timestamp?: string
+    }
+  | {
       type: 'error'
       message: string
     }
+
+export type ChatMessageItem = {
+  id: string
+  sender: 'me' | 'stranger'
+  text: string
+  timestamp: string
+}

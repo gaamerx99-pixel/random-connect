@@ -1,14 +1,28 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-
+import { useAuth, useUser } from '@clerk/clerk-react'
 import { getSignalingUrl } from '../../services/signaling/signalingClient'
-import type { SignalingConnectionStatus, SignalingMessage } from '../../types/signaling'
+import type { ChatMessageItem, SignalingConnectionStatus } from '../../types/signaling'
+
+export interface PeerProfile {
+  clerk_id: string
+  name: string
+  gender: string
+  age: number
+  country: string
+  image?: string
+}
 
 type WebRtcSignalingState = {
+  chatMessages: ChatMessageItem[]
   errorMessage: string | null
   findStranger: () => void
   isSearching: boolean
+  leaveRoom: () => void
+  peerProfile: PeerProfile | null
   remoteStream: MediaStream | null
+  sendChatMessage: (text: string) => void
   signalingStatus: SignalingConnectionStatus
+  skipStranger: () => void
 }
 
 const peerConnectionConfig: RTCConfiguration = {
@@ -16,23 +30,36 @@ const peerConnectionConfig: RTCConfiguration = {
 }
 
 export function useWebRtcSignaling(localStream: MediaStream | null): WebRtcSignalingState {
+  const { user } = useUser()
   const localStreamRef = useRef<MediaStream | null>(localStream)
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null)
   const pendingIceCandidatesRef = useRef<RTCIceCandidateInit[]>([])
   const websocketRef = useRef<WebSocket | null>(null)
 
+  const [chatMessages, setChatMessages] = useState<ChatMessageItem[]>([])
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isSearching, setIsSearching] = useState(false)
+  const [peerProfile, setPeerProfile] = useState<PeerProfile | null>(null)
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null)
   const [signalingStatus, setSignalingStatus] = useState<SignalingConnectionStatus>('idle')
 
   useEffect(() => {
     localStreamRef.current = localStream
+    const peerConnection = peerConnectionRef.current
+    if (peerConnection && localStream) {
+      const videoTrack = localStream.getVideoTracks()[0] ?? null
+      const senders = peerConnection.getSenders()
+      const videoSender = senders.find((s) => s.track?.kind === 'video' || (s.track === null && s.kind === 'video'))
+      if (videoSender) {
+        void videoSender.replaceTrack(videoTrack)
+      } else if (videoTrack) {
+        peerConnection.addTrack(videoTrack, localStream)
+      }
+    }
   }, [localStream])
 
   const sendMessage = useCallback((message: object) => {
     const websocket = websocketRef.current
-
     if (websocket?.readyState === WebSocket.OPEN) {
       websocket.send(JSON.stringify(message))
     }
@@ -43,10 +70,10 @@ export function useWebRtcSignaling(localStream: MediaStream | null): WebRtcSigna
     peerConnectionRef.current = null
     pendingIceCandidatesRef.current = []
     setRemoteStream(null)
+    setPeerProfile(null)
   }, [])
 
   const applyPendingIceCandidates = useCallback(async (peerConnection: RTCPeerConnection) => {
-    // Step 9a: Apply ICE candidates that arrived before the remote SDP was ready.
     const pendingCandidates = pendingIceCandidatesRef.current
     pendingIceCandidatesRef.current = []
 
@@ -58,20 +85,16 @@ export function useWebRtcSignaling(localStream: MediaStream | null): WebRtcSigna
   const createPeerConnection = useCallback(() => {
     closePeerConnection()
 
-    // Step 1: Create a native RTCPeerConnection for the matched stranger.
     const peerConnection = new RTCPeerConnection(peerConnectionConfig)
     peerConnectionRef.current = peerConnection
 
-    // Step 2: Add already-granted local camera and microphone tracks to the peer connection.
     localStreamRef.current?.getTracks().forEach((track) => {
       const stream = localStreamRef.current
-
       if (stream) {
         peerConnection.addTrack(track, stream)
       }
     })
 
-    // Step 3: Send ICE candidates to the matched peer through FastAPI WebSocket signaling.
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
         sendMessage({
@@ -81,19 +104,15 @@ export function useWebRtcSignaling(localStream: MediaStream | null): WebRtcSigna
       }
     }
 
-    // Step 4: Render the remote media stream when the peer's tracks arrive.
     peerConnection.ontrack = (event) => {
       const [nextRemoteStream] = event.streams
-
       if (nextRemoteStream) {
         setRemoteStream(nextRemoteStream)
       }
     }
 
-    // Step 5: Reflect native WebRTC connection state in the waiting room UI.
     peerConnection.onconnectionstatechange = () => {
       const nextState = peerConnection.connectionState
-
       if (nextState === 'connected') {
         setSignalingStatus('connected')
       } else if (nextState === 'connecting' || nextState === 'new') {
@@ -109,14 +128,18 @@ export function useWebRtcSignaling(localStream: MediaStream | null): WebRtcSigna
   }, [closePeerConnection, sendMessage])
 
   const handleMatched = useCallback(
-    async (message: Extract<SignalingMessage, { type: 'matched' }>) => {
+    async (message: any) => {
       setSignalingStatus('matched')
       setIsSearching(false)
       setErrorMessage(null)
+      setChatMessages([])
+
+      if (message.peer_profile) {
+        setPeerProfile(message.peer_profile)
+      }
 
       const peerConnection = createPeerConnection()
 
-      // Step 6: The backend chooses one peer to create the SDP offer to avoid glare.
       if (message.should_create_offer) {
         const offer = await peerConnection.createOffer()
         await peerConnection.setLocalDescription(offer)
@@ -131,10 +154,9 @@ export function useWebRtcSignaling(localStream: MediaStream | null): WebRtcSigna
   )
 
   const handleOffer = useCallback(
-    async (message: Extract<SignalingMessage, { type: 'offer' }>) => {
+    async (message: any) => {
       const peerConnection = peerConnectionRef.current ?? createPeerConnection()
 
-      // Step 7: Accept the remote SDP offer and respond with a native SDP answer.
       await peerConnection.setRemoteDescription(new RTCSessionDescription(message.sdp))
       await applyPendingIceCandidates(peerConnection)
 
@@ -150,10 +172,9 @@ export function useWebRtcSignaling(localStream: MediaStream | null): WebRtcSigna
   )
 
   const handleAnswer = useCallback(
-    async (message: Extract<SignalingMessage, { type: 'answer' }>) => {
+    async (message: any) => {
       const peerConnection = peerConnectionRef.current
 
-      // Step 8: Complete offer negotiation by applying the remote SDP answer.
       if (peerConnection && !peerConnection.currentRemoteDescription) {
         await peerConnection.setRemoteDescription(new RTCSessionDescription(message.sdp))
         await applyPendingIceCandidates(peerConnection)
@@ -163,10 +184,8 @@ export function useWebRtcSignaling(localStream: MediaStream | null): WebRtcSigna
   )
 
   const handleIceCandidate = useCallback(
-    async (message: Extract<SignalingMessage, { type: 'ice-candidate' }>) => {
+    async (message: any) => {
       const peerConnection = peerConnectionRef.current
-
-      // Step 9: Add ICE candidates received from the peer through the signaling server.
       if (peerConnection?.remoteDescription) {
         await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate))
       } else {
@@ -177,7 +196,7 @@ export function useWebRtcSignaling(localStream: MediaStream | null): WebRtcSigna
   )
 
   const handleMessage = useCallback(
-    async (message: SignalingMessage) => {
+    async (message: any) => {
       try {
         if (message.type === 'waiting') {
           setSignalingStatus('waiting')
@@ -204,10 +223,30 @@ export function useWebRtcSignaling(localStream: MediaStream | null): WebRtcSigna
           return
         }
 
+        if (message.type === 'chat-message') {
+          const newItem: ChatMessageItem = {
+            id: String(Date.now() + Math.random()),
+            sender: 'stranger',
+            text: message.text,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          }
+          setChatMessages((prev) => [...prev, newItem])
+          return
+        }
+
         if (message.type === 'peer-disconnected') {
           closePeerConnection()
           setSignalingStatus('disconnected')
           setIsSearching(false)
+          setChatMessages((prev) => [
+            ...prev,
+            {
+              id: String(Date.now()),
+              sender: 'stranger',
+              text: '— Stranger disconnected —',
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            },
+          ])
           return
         }
 
@@ -223,6 +262,48 @@ export function useWebRtcSignaling(localStream: MediaStream | null): WebRtcSigna
     [closePeerConnection, handleAnswer, handleIceCandidate, handleMatched, handleOffer],
   )
 
+  const sendChatMessage = useCallback(
+    (text: string) => {
+      if (!text.trim()) return
+      const trimmed = text.trim()
+      sendMessage({
+        type: 'chat-message',
+        text: trimmed,
+      })
+
+      const newItem: ChatMessageItem = {
+        id: String(Date.now() + Math.random()),
+        sender: 'me',
+        text: trimmed,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      }
+      setChatMessages((prev) => [...prev, newItem])
+    },
+    [sendMessage],
+  )
+
+  const skipStranger = useCallback(() => {
+    closePeerConnection()
+    setChatMessages([])
+    setIsSearching(true)
+    setSignalingStatus('waiting')
+    sendMessage({ type: 'skip' })
+  }, [closePeerConnection, sendMessage])
+
+  const leaveRoom = useCallback(() => {
+    closePeerConnection()
+    setChatMessages([])
+    setIsSearching(false)
+    setSignalingStatus('idle')
+    sendMessage({ type: 'leave' })
+    websocketRef.current?.close()
+  }, [closePeerConnection, sendMessage])
+
+  const handleMessageRef = useRef(handleMessage)
+  useEffect(() => {
+    handleMessageRef.current = handleMessage
+  }, [handleMessage])
+
   const findStranger = useCallback(() => {
     if (!localStreamRef.current) {
       setErrorMessage('Camera and microphone access are required before searching.')
@@ -232,19 +313,22 @@ export function useWebRtcSignaling(localStream: MediaStream | null): WebRtcSigna
     setErrorMessage(null)
     setIsSearching(true)
     setSignalingStatus('connecting')
+    setChatMessages([])
     closePeerConnection()
 
-    // Step 10: Connect to the existing FastAPI WebSocket signaling endpoint.
     const websocket = new WebSocket(getSignalingUrl())
     websocketRef.current?.close()
     websocketRef.current = websocket
 
     websocket.onopen = () => {
+      if (user?.id) {
+        sendMessage({ type: 'auth-sync', clerk_id: user.id })
+      }
       sendMessage({ type: 'find-stranger' })
     }
 
     websocket.onmessage = (event) => {
-      void handleMessage(JSON.parse(event.data) as SignalingMessage)
+      void handleMessageRef.current(JSON.parse(event.data))
     }
 
     websocket.onerror = () => {
@@ -257,7 +341,7 @@ export function useWebRtcSignaling(localStream: MediaStream | null): WebRtcSigna
       setIsSearching(false)
       setSignalingStatus((currentStatus) => (currentStatus === 'connected' ? 'disconnected' : currentStatus))
     }
-  }, [closePeerConnection, handleMessage, sendMessage])
+  }, [closePeerConnection, sendMessage, user])
 
   useEffect(() => {
     return () => {
@@ -267,10 +351,15 @@ export function useWebRtcSignaling(localStream: MediaStream | null): WebRtcSigna
   }, [closePeerConnection])
 
   return {
+    chatMessages,
     errorMessage,
     findStranger,
     isSearching,
+    leaveRoom,
+    peerProfile,
     remoteStream,
+    sendChatMessage,
     signalingStatus,
+    skipStranger,
   }
 }

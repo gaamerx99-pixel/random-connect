@@ -43,3 +43,21 @@ Full stack FastAPI + React (Vite) + TypeScript + Tailwind CSS + MongoDB starter 
 - Frontend proxy is configured to forward `/api` and `/ws` to `http://localhost:8000`.
 - MongoDB is expected to be reachable via the `MONGO_URI` environment variable.
 - Google OAuth integration is scaffolded with placeholder endpoints.
+
+<!-- run commands -->
+
+## Run Commands
+
+### Backend
+
+```powershell
+cd backend
+.\venv\Scripts\Activate.ps1
+uvicorn app.main:app --reload
+```
+
+Backend will run on
+
+```powershell
+python -m venv venv
+```

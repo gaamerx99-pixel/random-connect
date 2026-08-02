@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
+import { SignInButton, SignUpButton, UserButton } from '@clerk/clerk-react'
 import {
   BoltIcon,
   CheckCircleIcon,
@@ -9,10 +10,12 @@ import {
   ShieldCheckIcon,
   SparklesIcon,
   VideoCameraIcon,
+  ArrowRightIcon,
 } from '@heroicons/react/24/outline'
 
 import { Button } from '../../components/ui/Button'
 import { GlassPanel } from '../../components/ui/GlassPanel'
+import { useSafeAuth } from '../../contexts/AuthContext'
 
 const fadeUp = {
   hidden: { opacity: 0, y: 22 },
@@ -21,67 +24,72 @@ const fadeUp = {
 
 const features = [
   {
-    title: 'Instant matching',
-    description: 'A polished first step toward fast, low-friction conversations with new people.',
+    title: 'Smart Gender & Preference Matching',
+    description: 'Connect with online strangers tailored to your gender preferences and language filters.',
     icon: BoltIcon,
   },
   {
-    title: 'Privacy-minded flows',
-    description: 'Designed for clear controls, predictable states, and safer product decisions as the app grows.',
+    title: 'Secure & Private WebRTC Calls',
+    description: 'Direct peer-to-peer audio and video streaming with instant report and block controls.',
     icon: ShieldCheckIcon,
   },
   {
-    title: 'Global by default',
-    description: 'Responsive interface patterns that work across devices, regions, and connection quality.',
+    title: 'Global Fast Matchmaking',
+    description: 'Sub-3 second queue matchmaking powered by FastAPI WebSockets & MongoDB.',
     icon: GlobeAltIcon,
   },
 ]
 
 const stats = [
-  { value: '< 3s', label: 'Target match start' },
-  { value: '24/7', label: 'Always-on experience' },
-  { value: '100%', label: 'Responsive interface' },
-]
-
-const faqs = [
-  {
-    question: 'Is video chat active yet?',
-    answer: 'Not yet. This page is UI-only and intentionally does not implement WebRTC or matching behavior.',
-  },
-  {
-    question: 'Does Login with Google authenticate users?',
-    answer: 'No. The button is a visual placeholder until authentication is intentionally wired up.',
-  },
-  {
-    question: 'Is this based on Omegle?',
-    answer: 'No. The design direction is a premium SaaS-style product experience for RandomConnect.',
-  },
+  { value: '< 3s', label: 'Target match speed' },
+  { value: '100%', label: 'P2P WebRTC privacy' },
+  { value: '24/7', label: 'Always-on queue' },
 ]
 
 function Navbar() {
+  const navigate = useNavigate()
+  const { isSignedIn, isClerkConfigured } = useSafeAuth()
+
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 bg-[#07080d]/75 backdrop-blur-xl">
       <nav className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 sm:px-8">
         <a className="flex items-center gap-3" href="#top" aria-label="RandomConnect home">
           <span className="flex h-9 w-9 items-center justify-center rounded-2xl border border-white/10 bg-white/10">
-            <VideoCameraIcon className="h-5 w-5 text-emerald-300" />
+            <VideoCameraIcon className="h-5 w-5 text-indigo-400" />
           </span>
-          <span className="text-base font-semibold">RandomConnect</span>
+          <span className="text-base font-semibold text-white">RandomConnect</span>
         </a>
-        <div className="hidden items-center gap-7 text-sm text-zinc-300 md:flex">
-          <a className="transition hover:text-white" href="#features">
-            Features
-          </a>
-          <a className="transition hover:text-white" href="#stats">
-            Stats
-          </a>
-          <a className="transition hover:text-white" href="#faq">
-            FAQ
-          </a>
+
+        <div className="flex items-center gap-3">
+          <button
+            className="flex items-center gap-2 rounded-xl bg-indigo-600/30 border border-indigo-500/40 px-4 py-2 text-xs font-semibold text-indigo-200 hover:bg-indigo-600/50 transition"
+            onClick={() => navigate('/dashboard')}
+          >
+            <span>Open Dashboard</span>
+            <ArrowRightIcon className="h-3.5 w-3.5" />
+          </button>
+
+          {isClerkConfigured && (
+            <>
+              {isSignedIn ? (
+                <UserButton afterSignOutUrl="/" />
+              ) : (
+                <div className="flex items-center gap-2">
+                  <SignInButton mode="modal">
+                    <Button className="min-h-9 px-3 text-xs" variant="secondary">
+                      Log in
+                    </Button>
+                  </SignInButton>
+                  <SignUpButton mode="modal">
+                    <Button className="min-h-9 px-3 text-xs bg-indigo-600 text-white hover:bg-indigo-500">
+                      Sign Up
+                    </Button>
+                  </SignUpButton>
+                </div>
+              )}
+            </>
+          )}
         </div>
-        <Button className="hidden min-h-10 px-4 md:inline-flex" variant="secondary">
-          Login with Google
-        </Button>
       </nav>
     </header>
   )
@@ -94,33 +102,33 @@ function HeroVisual() {
       className="relative mx-auto mt-12 aspect-[1.05] w-full max-w-[560px] lg:mt-0"
       transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
     >
-      <div className="absolute inset-0 rounded-[2rem] border border-white/10 bg-[linear-gradient(135deg,rgba(15,23,42,0.72),rgba(24,24,27,0.38)_42%,rgba(6,78,59,0.32))] shadow-[0_30px_100px_rgba(0,0,0,0.45)] backdrop-blur-xl" />
+      <div className="absolute inset-0 rounded-[2rem] border border-white/10 bg-[linear-gradient(135deg,rgba(15,23,42,0.72),rgba(24,24,27,0.38)_42%,rgba(67,56,202,0.32))] shadow-[0_30px_100px_rgba(0,0,0,0.45)] backdrop-blur-xl" />
       <div className="absolute left-[7%] top-[8%] h-[50%] w-[55%] overflow-hidden rounded-[1.5rem] border border-white/10 bg-zinc-950">
-        <div className="h-full bg-[linear-gradient(145deg,#18181b,#064e3b_52%,#111827)]" />
+        <div className="h-full bg-[linear-gradient(145deg,#18181b,#4338ca_52%,#111827)]" />
         <div className="absolute left-4 top-4 flex items-center gap-2 rounded-full bg-black/35 px-3 py-1 text-xs text-white/80 backdrop-blur-md">
-          <span className="h-2 w-2 rounded-full bg-emerald-300" />
-          Live preview
+          <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+          Local Camera
         </div>
       </div>
       <div className="absolute bottom-[9%] right-[7%] h-[49%] w-[57%] overflow-hidden rounded-[1.5rem] border border-white/10 bg-zinc-950">
-        <div className="h-full bg-[linear-gradient(145deg,#312e81,#7f1d1d_48%,#0f172a)]" />
+        <div className="h-full bg-[linear-gradient(145deg,#312e81,#6b21a8_48%,#0f172a)]" />
         <div className="absolute bottom-4 right-4 rounded-full bg-black/35 px-3 py-1 text-xs text-white/80 backdrop-blur-md">
-          Stranger ready
+          Matched Stranger
         </div>
       </div>
       <GlassPanel className="absolute bottom-[18%] left-[8%] flex items-center gap-3 rounded-2xl px-4 py-3">
-        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-[#08090f]">
+        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-500 text-white">
           <PlayIcon className="h-5 w-5" />
         </span>
         <div>
-          <p className="text-sm font-semibold">Smart queue</p>
-          <p className="text-xs text-zinc-300">UI placeholder</p>
+          <p className="text-sm font-semibold">Gender Match Engine</p>
+          <p className="text-xs text-zinc-300">FastAPI + WebSockets</p>
         </div>
       </GlassPanel>
       <GlassPanel className="absolute right-[6%] top-[13%] rounded-2xl px-4 py-3">
-        <div className="flex items-center gap-2 text-sm font-semibold">
-          <LockClosedIcon className="h-4 w-4 text-emerald-300" />
-          Private by design
+        <div className="flex items-center gap-2 text-sm font-semibold text-emerald-300">
+          <LockClosedIcon className="h-4 w-4" />
+          P2P Encrypted
         </div>
       </GlassPanel>
     </motion.div>
@@ -141,42 +149,46 @@ function HeroSection() {
             variants={fadeUp}
           >
             <SparklesIcon className="h-4 w-4 text-amber-300" />
-            Premium random video chat, built with restraint
+            Next-Gen Random Video & Text Chat Application
           </motion.div>
           <motion.h1
             className="max-w-4xl text-5xl font-semibold leading-[1.03] text-white sm:text-6xl lg:text-7xl"
             variants={fadeUp}
           >
-            Meet someone new in a calmer, sharper video chat experience.
+            Connect with new strangers around the world.
           </motion.h1>
           <motion.p className="mt-6 max-w-2xl text-lg leading-8 text-zinc-300 sm:text-xl" variants={fadeUp}>
-            RandomConnect is shaped like a serious product from day one: elegant flows, clear controls, and a UI ready
-            for real-time conversation features when you decide to wire them in.
+            RandomConnect delivers real-time P2P WebRTC video calls, gender-based matchmaking, instant report/block safety controls, and real-time chat.
           </motion.p>
           <motion.div className="mt-9 flex flex-col gap-3 sm:flex-row" variants={fadeUp}>
-            <Button className="w-full sm:w-auto" onClick={() => navigate('/waiting')}>
-              <VideoCameraIcon className="h-5 w-5" />
-              Start Video Chat
-            </Button>
-            <Button className="w-full sm:w-auto" variant="secondary">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white text-xs font-bold text-[#08090f]">
-                G
-              </span>
-              Login with Google
-            </Button>
+            <button
+              className="flex items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 px-8 py-4 font-bold text-white shadow-xl transition hover:scale-[1.02] active:scale-[0.98]"
+              onClick={() => navigate('/dashboard')}
+            >
+              <VideoCameraIcon className="h-6 w-6 animate-pulse" />
+              <span>Go to Dashboard & Start Match</span>
+            </button>
+            <button
+              className="flex items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-6 py-4 font-semibold text-white transition hover:bg-white/20"
+              onClick={() => navigate('/waiting')}
+            >
+              <span>Instant Stranger Video Call</span>
+              <ArrowRightIcon className="h-4 w-4" />
+            </button>
           </motion.div>
+
           <motion.div className="mt-7 flex flex-col gap-3 text-sm text-zinc-400 sm:flex-row sm:items-center" variants={fadeUp}>
             <span className="flex items-center gap-2">
               <CheckCircleIcon className="h-5 w-5 text-emerald-300" />
-              UI only
+              Clerk Auth Ready
             </span>
             <span className="flex items-center gap-2">
               <CheckCircleIcon className="h-5 w-5 text-emerald-300" />
-              No auth wired
+              MongoDB Database
             </span>
             <span className="flex items-center gap-2">
               <CheckCircleIcon className="h-5 w-5 text-emerald-300" />
-              No WebRTC wired
+              P2P WebRTC Video Call
             </span>
           </motion.div>
         </motion.div>
@@ -190,8 +202,8 @@ function FeaturesSection() {
   return (
     <section id="features" className="mx-auto max-w-7xl px-5 py-20 sm:px-8">
       <div className="mb-10 max-w-2xl">
-        <p className="text-sm font-semibold uppercase text-emerald-300">Product Foundation</p>
-        <h2 className="mt-3 text-3xl font-semibold text-white sm:text-4xl">Reusable patterns for a real platform.</h2>
+        <p className="text-sm font-semibold uppercase text-indigo-400">Platform Features</p>
+        <h2 className="mt-3 text-3xl font-semibold text-white sm:text-4xl">Everything you need for safe & fast random chat.</h2>
       </div>
       <div className="grid gap-4 md:grid-cols-3">
         {features.map((feature, index) => {
@@ -205,7 +217,7 @@ function FeaturesSection() {
               viewport={{ once: true, amount: 0.4 }}
               whileInView={{ opacity: 1, y: 0 }}
             >
-              <span className="mb-8 flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-[#08090f]">
+              <span className="mb-8 flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-500 text-white">
                 <Icon className="h-6 w-6" />
               </span>
               <h3 className="text-xl font-semibold">{feature.title}</h3>
@@ -233,39 +245,17 @@ function StatsSection() {
   )
 }
 
-function FaqSection() {
-  return (
-    <section id="faq" className="mx-auto max-w-4xl px-5 py-20 sm:px-8">
-      <div className="mb-8 text-center">
-        <p className="text-sm font-semibold uppercase text-amber-300">FAQ</p>
-        <h2 className="mt-3 text-3xl font-semibold sm:text-4xl">What this landing page does today.</h2>
-      </div>
-      <div className="space-y-3">
-        {faqs.map((faq) => (
-          <GlassPanel className="rounded-3xl p-6" key={faq.question}>
-            <h3 className="text-lg font-semibold">{faq.question}</h3>
-            <p className="mt-3 leading-7 text-zinc-400">{faq.answer}</p>
-          </GlassPanel>
-        ))}
-      </div>
-    </section>
-  )
-}
-
 function Footer() {
   return (
     <footer className="border-t border-white/10 px-5 py-8 sm:px-8">
       <div className="mx-auto flex max-w-7xl flex-col gap-4 text-sm text-zinc-400 sm:flex-row sm:items-center sm:justify-between">
-        <p>RandomConnect</p>
+        <p>RandomConnect © {new Date().getFullYear()}</p>
         <div className="flex gap-5">
           <a className="transition hover:text-white" href="#features">
             Features
           </a>
           <a className="transition hover:text-white" href="#stats">
             Stats
-          </a>
-          <a className="transition hover:text-white" href="#faq">
-            FAQ
           </a>
         </div>
       </div>
@@ -281,7 +271,6 @@ export function LandingPage() {
         <HeroSection />
         <FeaturesSection />
         <StatsSection />
-        <FaqSection />
       </main>
       <Footer />
     </>

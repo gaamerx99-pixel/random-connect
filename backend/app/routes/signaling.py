@@ -1,11 +1,14 @@
 from collections import deque
 from uuid import uuid4
-
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from jose import jwt
+from app.db import users_collection
+from app.config import CLERK_PEM_PUBLIC_KEY, JWT_ALGORITHM
 
 router = APIRouter()
 
 CLIENTS: dict[str, WebSocket] = {}
+CLIENT_METADATA: dict[str, dict] = {}
 WAITING_CLIENTS: deque[str] = deque()
 PEERS: dict[str, str] = {}
 
@@ -13,7 +16,10 @@ PEERS: dict[str, str] = {}
 async def send_json(client_id: str, payload: dict) -> None:
     websocket = CLIENTS.get(client_id)
     if websocket:
-        await websocket.send_json(payload)
+        try:
+            await websocket.send_json(payload)
+        except Exception:
+            pass
 
 
 def remove_from_waiting(client_id: str) -> None:
@@ -23,36 +29,112 @@ def remove_from_waiting(client_id: str) -> None:
         pass
 
 
-async def match_waiting_clients() -> None:
-    while len(WAITING_CLIENTS) >= 2:
-        first_client_id = WAITING_CLIENTS.popleft()
-        second_client_id = WAITING_CLIENTS.popleft()
+def is_eligible_pair(user_a: dict, user_b: dict) -> bool:
+    """Evaluate gender & block rules for a candidate pair."""
+    clerk_a = user_a.get("clerk_id", "")
+    clerk_b = user_b.get("clerk_id", "")
 
-        if first_client_id not in CLIENTS or second_client_id not in CLIENTS:
+    # Block list check
+    if clerk_b in user_a.get("blocked_users", []) or clerk_a in user_b.get("blocked_users", []):
+        return False
+
+    gender_a = user_a.get("gender", "male")
+    looking_a = user_a.get("looking_for", "female")
+
+    gender_b = user_b.get("gender", "female")
+    looking_b = user_b.get("looking_for", "male")
+
+    a_accepts_b = (looking_a == "anyone") or (looking_a == gender_b)
+    b_accepts_a = (looking_b == "anyone") or (looking_b == gender_a)
+
+    return a_accepts_b and b_accepts_a
+
+
+async def match_waiting_clients() -> None:
+    """Smart Queue Matchmaking Engine with Gender & Block Rules."""
+    if len(WAITING_CLIENTS) < 2:
+        return
+
+    waiting_list = list(WAITING_CLIENTS)
+    matched_pairs = []
+
+    i = 0
+    while i < len(waiting_list):
+        client_a = waiting_list[i]
+        if client_a not in CLIENTS:
+            remove_from_waiting(client_a)
+            waiting_list.pop(i)
             continue
 
+        meta_a = CLIENT_METADATA.get(client_a, {})
+        match_found = False
+
+        j = i + 1
+        while j < len(waiting_list):
+            client_b = waiting_list[j]
+            if client_b not in CLIENTS:
+                remove_from_waiting(client_b)
+                waiting_list.pop(j)
+                continue
+
+            meta_b = CLIENT_METADATA.get(client_b, {})
+
+            if is_eligible_pair(meta_a, meta_b):
+                matched_pairs.append((client_a, client_b))
+                waiting_list.pop(j)
+                waiting_list.pop(i)
+                match_found = True
+                break
+            j += 1
+
+        if not match_found:
+            i += 1
+
+    for client_a, client_b in matched_pairs:
+        remove_from_waiting(client_a)
+        remove_from_waiting(client_b)
+
         room_id = str(uuid4())
-        PEERS[first_client_id] = second_client_id
-        PEERS[second_client_id] = first_client_id
+        PEERS[client_a] = client_b
+        PEERS[client_b] = client_a
+
+        meta_a = CLIENT_METADATA.get(client_a, {})
+        meta_b = CLIENT_METADATA.get(client_b, {})
 
         await send_json(
-            first_client_id,
+            client_a,
             {
                 "type": "matched",
-                "client_id": first_client_id,
-                "peer_id": second_client_id,
+                "client_id": client_a,
+                "peer_id": client_b,
                 "room_id": room_id,
                 "should_create_offer": True,
+                "peer_profile": {
+                    "clerk_id": meta_b.get("clerk_id", ""),
+                    "name": meta_b.get("name", "Stranger"),
+                    "gender": meta_b.get("gender", ""),
+                    "age": meta_b.get("age", 18),
+                    "country": meta_b.get("country", ""),
+                    "image": meta_b.get("image", ""),
+                },
             },
         )
         await send_json(
-            second_client_id,
+            client_b,
             {
                 "type": "matched",
-                "client_id": second_client_id,
-                "peer_id": first_client_id,
+                "client_id": client_b,
+                "peer_id": client_a,
                 "room_id": room_id,
                 "should_create_offer": False,
+                "peer_profile": {
+                    "clerk_id": meta_a.get("clerk_id", ""),
+                    "name": meta_a.get("name", "Stranger"),
+                    "gender": meta_a.get("gender", ""),
+                    "age": meta_a.get("age", 18),
+                    "country": meta_a.get("country", ""),
+                    "image": meta_a.get("image", ""),
+                },
             },
         )
 
@@ -112,10 +194,23 @@ async def relay_to_peer(client_id: str, message: dict) -> None:
     )
 
 
+@router.websocket("/ws")
 async def handle_signaling_websocket(websocket: WebSocket):
     await websocket.accept()
     client_id = str(uuid4())
     CLIENTS[client_id] = websocket
+
+    # Default fallback metadata
+    user_meta = {
+        "clerk_id": client_id,
+        "name": "Anonymous",
+        "gender": "male",
+        "looking_for": "anyone",
+        "age": 18,
+        "country": "India",
+        "blocked_users": [],
+    }
+    CLIENT_METADATA[client_id] = user_meta
 
     await send_json(
         client_id,
@@ -130,12 +225,20 @@ async def handle_signaling_websocket(websocket: WebSocket):
             message = await websocket.receive_json()
             message_type = message.get("type")
 
-            if message_type == "find-stranger":
+            if message_type == "auth-sync":
+                # Client sends authenticated Clerk profile info to WebSocket
+                clerk_id = message.get("clerk_id")
+                if clerk_id:
+                    user_doc = await users_collection.find_one({"clerk_id": clerk_id}, {"_id": 0})
+                    if user_doc:
+                        CLIENT_METADATA[client_id] = user_doc
+
+            elif message_type == "find-stranger":
                 await enqueue_client(client_id)
             elif message_type == "skip":
                 await disconnect_peer(client_id, requeue_client=True)
                 await match_waiting_clients()
-            elif message_type in {"offer", "answer", "ice-candidate"}:
+            elif message_type in {"offer", "answer", "ice-candidate", "chat-message"}:
                 await relay_to_peer(client_id, message)
             elif message_type == "leave":
                 await disconnect_peer(client_id, requeue_client=False)
@@ -149,9 +252,5 @@ async def handle_signaling_websocket(websocket: WebSocket):
                 )
     except WebSocketDisconnect:
         CLIENTS.pop(client_id, None)
+        CLIENT_METADATA.pop(client_id, None)
         await disconnect_peer(client_id, requeue_client=False)
-
-
-@router.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await handle_signaling_websocket(websocket)
