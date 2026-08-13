@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useAuth, useUser } from '@clerk/clerk-react'
+import { useUser } from '@clerk/clerk-react'
 import { getSignalingUrl } from '../../services/signaling/signalingClient'
-import type { ChatMessageItem, SignalingConnectionStatus } from '../../types/signaling'
+import type {
+  ChatMessageItem,
+  SignalingConnectionStatus,
+} from '../../types/signaling'
 
 export interface PeerProfile {
   clerk_id: string
@@ -26,329 +29,1389 @@ type WebRtcSignalingState = {
 }
 
 const peerConnectionConfig: RTCConfiguration = {
-  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+  iceServers: [
+    {
+      urls: 'stun:stun.l.google.com:19302',
+    },
+  ],
 }
 
-export function useWebRtcSignaling(localStream: MediaStream | null): WebRtcSignalingState {
+export function useWebRtcSignaling(
+  localStream: MediaStream | null,
+): WebRtcSignalingState {
   const { user } = useUser()
-  const localStreamRef = useRef<MediaStream | null>(localStream)
-  const peerConnectionRef = useRef<RTCPeerConnection | null>(null)
-  const pendingIceCandidatesRef = useRef<RTCIceCandidateInit[]>([])
-  const websocketRef = useRef<WebSocket | null>(null)
 
-  const [chatMessages, setChatMessages] = useState<ChatMessageItem[]>([])
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [isSearching, setIsSearching] = useState(false)
-  const [peerProfile, setPeerProfile] = useState<PeerProfile | null>(null)
-  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null)
-  const [signalingStatus, setSignalingStatus] = useState<SignalingConnectionStatus>('idle')
+  // ============================================================
+  // REFS
+  // ============================================================
+
+  const localStreamRef = useRef<MediaStream | null>(
+    localStream,
+  )
+
+  const peerConnectionRef =
+    useRef<RTCPeerConnection | null>(null)
+
+  const pendingIceCandidatesRef =
+    useRef<RTCIceCandidateInit[]>([])
+
+  const websocketRef =
+    useRef<WebSocket | null>(null)
+
+  const handleMessageRef =
+    useRef<(message: any) => Promise<void>>(
+      async () => {},
+    )
+
+  // Used to identify the currently active WebSocket.
+  const websocketGenerationRef = useRef(0)
+
+  // ============================================================
+  // STATE
+  // ============================================================
+
+  const [chatMessages, setChatMessages] = useState<
+    ChatMessageItem[]
+  >([])
+
+  const [errorMessage, setErrorMessage] =
+    useState<string | null>(null)
+
+  const [isSearching, setIsSearching] =
+    useState(false)
+
+  const [peerProfile, setPeerProfile] =
+    useState<PeerProfile | null>(null)
+
+  const [remoteStream, setRemoteStream] =
+    useState<MediaStream | null>(null)
+
+  const [signalingStatus, setSignalingStatus] =
+    useState<SignalingConnectionStatus>('idle')
+
+  // ============================================================
+  // LOCAL MEDIA
+  // ============================================================
 
   useEffect(() => {
     localStreamRef.current = localStream
-    const peerConnection = peerConnectionRef.current
-    if (peerConnection && localStream) {
-      const videoTrack = localStream.getVideoTracks()[0] ?? null
-      const senders = peerConnection.getSenders()
-      const videoSender = senders.find((s) => s.track?.kind === 'video' || (s.track === null && s.kind === 'video'))
-      if (videoSender) {
-        void videoSender.replaceTrack(videoTrack)
-      } else if (videoTrack) {
-        peerConnection.addTrack(videoTrack, localStream)
-      }
+
+    const peerConnection =
+      peerConnectionRef.current
+
+    if (!peerConnection || !localStream) {
+      return
+    }
+
+    const videoTrack =
+      localStream.getVideoTracks()[0] ?? null
+
+    const audioTrack =
+      localStream.getAudioTracks()[0] ?? null
+
+    const senders =
+      peerConnection.getSenders()
+
+    // ------------------------------
+    // Video
+    // ------------------------------
+
+    const videoSender = senders.find(
+      (sender) =>
+        sender.track?.kind === 'video',
+    )
+
+    if (videoSender) {
+      void videoSender.replaceTrack(
+        videoTrack,
+      )
+    } else if (videoTrack) {
+      peerConnection.addTrack(
+        videoTrack,
+        localStream,
+      )
+    }
+
+    // ------------------------------
+    // Audio
+    // ------------------------------
+
+    const audioSender = senders.find(
+      (sender) =>
+        sender.track?.kind === 'audio',
+    )
+
+    if (audioSender) {
+      void audioSender.replaceTrack(
+        audioTrack,
+      )
+    } else if (audioTrack) {
+      peerConnection.addTrack(
+        audioTrack,
+        localStream,
+      )
     }
   }, [localStream])
 
-  const sendMessage = useCallback((message: object) => {
-    const websocket = websocketRef.current
-    if (websocket?.readyState === WebSocket.OPEN) {
-      websocket.send(JSON.stringify(message))
-    }
-  }, [])
+  // ============================================================
+  // SEND WEBSOCKET MESSAGE
+  // ============================================================
 
-  const closePeerConnection = useCallback(() => {
-    peerConnectionRef.current?.close()
-    peerConnectionRef.current = null
-    pendingIceCandidatesRef.current = []
-    setRemoteStream(null)
-    setPeerProfile(null)
-  }, [])
+  const sendMessage = useCallback(
+    (message: object) => {
+      const websocket =
+        websocketRef.current
 
-  const applyPendingIceCandidates = useCallback(async (peerConnection: RTCPeerConnection) => {
-    const pendingCandidates = pendingIceCandidatesRef.current
-    pendingIceCandidatesRef.current = []
+      if (
+        websocket &&
+        websocket.readyState ===
+          WebSocket.OPEN
+      ) {
+        websocket.send(
+          JSON.stringify(message),
+        )
 
-    await Promise.all(
-      pendingCandidates.map((candidate) => peerConnection.addIceCandidate(new RTCIceCandidate(candidate))),
-    )
-  }, [])
-
-  const createPeerConnection = useCallback(() => {
-    closePeerConnection()
-
-    const peerConnection = new RTCPeerConnection(peerConnectionConfig)
-    peerConnectionRef.current = peerConnection
-
-    localStreamRef.current?.getTracks().forEach((track) => {
-      const stream = localStreamRef.current
-      if (stream) {
-        peerConnection.addTrack(track, stream)
-      }
-    })
-
-    peerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
-        sendMessage({
-          type: 'ice-candidate',
-          candidate: event.candidate.toJSON(),
-        })
-      }
-    }
-
-    peerConnection.ontrack = (event) => {
-      const [nextRemoteStream] = event.streams
-      if (nextRemoteStream) {
-        setRemoteStream(nextRemoteStream)
-      }
-    }
-
-    peerConnection.onconnectionstatechange = () => {
-      const nextState = peerConnection.connectionState
-      if (nextState === 'connected') {
-        setSignalingStatus('connected')
-      } else if (nextState === 'connecting' || nextState === 'new') {
-        setSignalingStatus('connecting')
-      } else if (nextState === 'disconnected' || nextState === 'closed') {
-        setSignalingStatus('disconnected')
-      } else if (nextState === 'failed') {
-        setSignalingStatus('failed')
-      }
-    }
-
-    return peerConnection
-  }, [closePeerConnection, sendMessage])
-
-  const handleMatched = useCallback(
-    async (message: any) => {
-      setSignalingStatus('matched')
-      setIsSearching(false)
-      setErrorMessage(null)
-      setChatMessages([])
-
-      if (message.peer_profile) {
-        setPeerProfile(message.peer_profile)
+        return true
       }
 
-      const peerConnection = createPeerConnection()
-
-      if (message.should_create_offer) {
-        const offer = await peerConnection.createOffer()
-        await peerConnection.setLocalDescription(offer)
-
-        sendMessage({
-          type: 'offer',
-          sdp: offer,
-        })
-      }
-    },
-    [createPeerConnection, sendMessage],
-  )
-
-  const handleOffer = useCallback(
-    async (message: any) => {
-      const peerConnection = peerConnectionRef.current ?? createPeerConnection()
-
-      await peerConnection.setRemoteDescription(new RTCSessionDescription(message.sdp))
-      await applyPendingIceCandidates(peerConnection)
-
-      const answer = await peerConnection.createAnswer()
-      await peerConnection.setLocalDescription(answer)
-
-      sendMessage({
-        type: 'answer',
-        sdp: answer,
-      })
-    },
-    [applyPendingIceCandidates, createPeerConnection, sendMessage],
-  )
-
-  const handleAnswer = useCallback(
-    async (message: any) => {
-      const peerConnection = peerConnectionRef.current
-
-      if (peerConnection && !peerConnection.currentRemoteDescription) {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(message.sdp))
-        await applyPendingIceCandidates(peerConnection)
-      }
-    },
-    [applyPendingIceCandidates],
-  )
-
-  const handleIceCandidate = useCallback(
-    async (message: any) => {
-      const peerConnection = peerConnectionRef.current
-      if (peerConnection?.remoteDescription) {
-        await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate))
-      } else {
-        pendingIceCandidatesRef.current.push(message.candidate)
-      }
+      return false
     },
     [],
   )
 
-  const handleMessage = useCallback(
-    async (message: any) => {
-      try {
-        if (message.type === 'waiting') {
-          setSignalingStatus('waiting')
+  // ============================================================
+  // CLOSE PEER CONNECTION
+  // ============================================================
+
+  const closePeerConnection =
+    useCallback(() => {
+      const peerConnection =
+        peerConnectionRef.current
+
+      if (peerConnection) {
+        peerConnection.onicecandidate =
+          null
+
+        peerConnection.ontrack =
+          null
+
+        peerConnection.onconnectionstatechange =
+          null
+
+        peerConnection.oniceconnectionstatechange =
+          null
+
+        try {
+          peerConnection.close()
+        } catch {
+          // Ignore already closed peer connection.
+        }
+      }
+
+      peerConnectionRef.current =
+        null
+
+      pendingIceCandidatesRef.current =
+        []
+
+      setRemoteStream(null)
+      setPeerProfile(null)
+    }, [])
+
+  // ============================================================
+  // APPLY PENDING ICE CANDIDATES
+  // ============================================================
+
+  const applyPendingIceCandidates =
+    useCallback(
+      async (
+        peerConnection: RTCPeerConnection,
+      ) => {
+        if (
+          !peerConnection.remoteDescription
+        ) {
           return
         }
 
-        if (message.type === 'matched') {
-          await handleMatched(message)
-          return
-        }
+        const pendingCandidates =
+          pendingIceCandidatesRef.current
 
-        if (message.type === 'offer') {
-          await handleOffer(message)
-          return
-        }
+        pendingIceCandidatesRef.current =
+          []
 
-        if (message.type === 'answer') {
-          await handleAnswer(message)
-          return
-        }
-
-        if (message.type === 'ice-candidate') {
-          await handleIceCandidate(message)
-          return
-        }
-
-        if (message.type === 'chat-message') {
-          const newItem: ChatMessageItem = {
-            id: String(Date.now() + Math.random()),
-            sender: 'stranger',
-            text: message.text,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        for (const candidate of pendingCandidates) {
+          try {
+            await peerConnection.addIceCandidate(
+              new RTCIceCandidate(candidate),
+            )
+          } catch (error) {
+            console.warn(
+              'Failed to apply ICE candidate:',
+              error,
+            )
           }
-          setChatMessages((prev) => [...prev, newItem])
+        }
+      },
+      [],
+    )
+
+  // ============================================================
+  // CREATE / GET PEER CONNECTION
+  // ============================================================
+
+  const createPeerConnection =
+    useCallback(() => {
+      // IMPORTANT:
+      // Do NOT destroy an already active connection.
+      const existing =
+        peerConnectionRef.current
+
+      if (existing) {
+        return existing
+      }
+
+      const peerConnection =
+        new RTCPeerConnection(
+          peerConnectionConfig,
+        )
+
+      peerConnectionRef.current =
+        peerConnection
+
+      // --------------------------------------------------------
+      // Add local tracks
+      // --------------------------------------------------------
+
+      const stream =
+        localStreamRef.current
+
+      if (stream) {
+        stream
+          .getTracks()
+          .forEach((track) => {
+            peerConnection.addTrack(
+              track,
+              stream,
+            )
+          })
+      }
+
+      // --------------------------------------------------------
+      // ICE candidate
+      // --------------------------------------------------------
+
+      peerConnection.onicecandidate = (
+        event,
+      ) => {
+        if (!event.candidate) {
           return
         }
 
-        if (message.type === 'peer-disconnected') {
-          closePeerConnection()
-          setSignalingStatus('disconnected')
-          setIsSearching(false)
-          setChatMessages((prev) => [
-            ...prev,
-            {
-              id: String(Date.now()),
-              sender: 'stranger',
-              text: '— Stranger disconnected —',
-              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            },
-          ])
+        sendMessage({
+          type: 'ice-candidate',
+          candidate:
+            event.candidate.toJSON(),
+        })
+      }
+
+      // --------------------------------------------------------
+      // Remote track
+      // --------------------------------------------------------
+
+      peerConnection.ontrack = (
+        event,
+      ) => {
+        const streamFromEvent =
+          event.streams[0]
+
+        if (streamFromEvent) {
+          setRemoteStream(
+            streamFromEvent,
+          )
+
           return
         }
 
-        if (message.type === 'error') {
-          setErrorMessage(message.message)
-          setSignalingStatus('failed')
+        // Fallback for browsers that don't
+        // provide event.streams.
+        setRemoteStream((current) => {
+          const stream =
+            current ??
+            new MediaStream()
+
+          if (
+            !stream
+              .getTracks()
+              .some(
+                (track) =>
+                  track.id ===
+                  event.track.id,
+              )
+          ) {
+            stream.addTrack(
+              event.track,
+            )
+          }
+
+          return stream
+        })
+      }
+
+      // --------------------------------------------------------
+      // Connection state
+      // --------------------------------------------------------
+
+      peerConnection.onconnectionstatechange =
+        () => {
+          const state =
+            peerConnection.connectionState
+
+          console.log(
+            '[WebRTC] connectionState:',
+            state,
+          )
+
+          if (state === 'connected') {
+            setSignalingStatus(
+              'connected',
+            )
+            setErrorMessage(null)
+            setIsSearching(false)
+          } else if (
+            state === 'connecting' ||
+            state === 'new'
+          ) {
+            setSignalingStatus(
+              'connecting',
+            )
+          } else if (
+            state === 'disconnected'
+          ) {
+            setSignalingStatus(
+              'disconnected',
+            )
+          } else if (
+            state === 'failed'
+          ) {
+            setSignalingStatus(
+              'failed',
+            )
+
+            setErrorMessage(
+              'WebRTC connection failed. Please try another stranger.',
+            )
+          } else if (
+            state === 'closed'
+          ) {
+            setSignalingStatus(
+              'disconnected',
+            )
+          }
         }
-      } catch (error) {
-        setErrorMessage(error instanceof Error ? error.message : 'WebRTC signaling failed.')
-        setSignalingStatus('failed')
-      }
-    },
-    [closePeerConnection, handleAnswer, handleIceCandidate, handleMatched, handleOffer],
-  )
 
-  const sendChatMessage = useCallback(
-    (text: string) => {
-      if (!text.trim()) return
-      const trimmed = text.trim()
-      sendMessage({
-        type: 'chat-message',
-        text: trimmed,
-      })
+      // --------------------------------------------------------
+      // ICE connection state
+      // --------------------------------------------------------
 
-      const newItem: ChatMessageItem = {
-        id: String(Date.now() + Math.random()),
-        sender: 'me',
-        text: trimmed,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      }
-      setChatMessages((prev) => [...prev, newItem])
-    },
-    [sendMessage],
-  )
+      peerConnection.oniceconnectionstatechange =
+        () => {
+          console.log(
+            '[WebRTC] iceConnectionState:',
+            peerConnection.iceConnectionState,
+          )
 
-  const skipStranger = useCallback(() => {
-    closePeerConnection()
-    setChatMessages([])
-    setIsSearching(true)
-    setSignalingStatus('waiting')
-    sendMessage({ type: 'skip' })
-  }, [closePeerConnection, sendMessage])
+          if (
+            peerConnection.iceConnectionState ===
+            'failed'
+          ) {
+            console.warn(
+              '[WebRTC] ICE connection failed.',
+            )
 
-  const leaveRoom = useCallback(() => {
-    closePeerConnection()
-    setChatMessages([])
-    setIsSearching(false)
-    setSignalingStatus('idle')
-    sendMessage({ type: 'leave' })
-    websocketRef.current?.close()
-  }, [closePeerConnection, sendMessage])
+            setSignalingStatus(
+              'failed',
+            )
+          }
+        }
 
-  const handleMessageRef = useRef(handleMessage)
+      return peerConnection
+    }, [sendMessage])
+
+  // ============================================================
+  // MATCHED
+  // ============================================================
+
+  const handleMatched =
+    useCallback(
+      async (message: any) => {
+        console.log(
+          '[Signaling] Matched:',
+          message,
+        )
+
+        setSignalingStatus('matched')
+        setIsSearching(false)
+        setErrorMessage(null)
+        setChatMessages([])
+
+        if (message.peer_profile) {
+          setPeerProfile(
+            message.peer_profile,
+          )
+        }
+
+        /*
+         * IMPORTANT:
+         * Reuse the existing RTCPeerConnection
+         * if one already exists.
+         */
+        const peerConnection =
+          createPeerConnection()
+
+        if (
+          message.should_create_offer
+        ) {
+          try {
+            console.log(
+              '[WebRTC] Creating offer...',
+            )
+
+            const offer =
+              await peerConnection.createOffer(
+                {
+                  offerToReceiveAudio: true,
+                  offerToReceiveVideo: true,
+                },
+              )
+
+            await peerConnection.setLocalDescription(
+              offer,
+            )
+
+            console.log(
+              '[WebRTC] Sending offer...',
+            )
+
+            sendMessage({
+              type: 'offer',
+              sdp: offer,
+            })
+          } catch (error) {
+            console.error(
+              '[WebRTC] Offer creation failed:',
+              error,
+            )
+
+            setErrorMessage(
+              error instanceof Error
+                ? error.message
+                : 'Failed to create video offer.',
+            )
+
+            setSignalingStatus(
+              'failed',
+            )
+          }
+        }
+      },
+      [
+        createPeerConnection,
+        sendMessage,
+      ],
+    )
+
+  // ============================================================
+  // OFFER
+  // ============================================================
+
+  const handleOffer =
+    useCallback(
+      async (message: any) => {
+        console.log(
+          '[WebRTC] Offer received.',
+        )
+
+        try {
+          const peerConnection =
+            createPeerConnection()
+
+          await peerConnection.setRemoteDescription(
+            new RTCSessionDescription(
+              message.sdp,
+            ),
+          )
+
+          await applyPendingIceCandidates(
+            peerConnection,
+          )
+
+          const answer =
+            await peerConnection.createAnswer(
+              {
+                offerToReceiveAudio: true,
+                offerToReceiveVideo: true,
+              },
+            )
+
+          await peerConnection.setLocalDescription(
+            answer,
+          )
+
+          console.log(
+            '[WebRTC] Sending answer...',
+          )
+
+          sendMessage({
+            type: 'answer',
+            sdp: answer,
+          })
+        } catch (error) {
+          console.error(
+            '[WebRTC] Offer handling failed:',
+            error,
+          )
+
+          setErrorMessage(
+            error instanceof Error
+              ? error.message
+              : 'Failed to process video offer.',
+          )
+
+          setSignalingStatus(
+            'failed',
+          )
+        }
+      },
+      [
+        applyPendingIceCandidates,
+        createPeerConnection,
+        sendMessage,
+      ],
+    )
+
+  // ============================================================
+  // ANSWER
+  // ============================================================
+
+  const handleAnswer =
+    useCallback(
+      async (message: any) => {
+        console.log(
+          '[WebRTC] Answer received.',
+        )
+
+        try {
+          const peerConnection =
+            peerConnectionRef.current
+
+          if (!peerConnection) {
+            console.warn(
+              '[WebRTC] No peer connection for answer.',
+            )
+
+            return
+          }
+
+          if (
+            peerConnection.currentRemoteDescription
+          ) {
+            return
+          }
+
+          await peerConnection.setRemoteDescription(
+            new RTCSessionDescription(
+              message.sdp,
+            ),
+          )
+
+          await applyPendingIceCandidates(
+            peerConnection,
+          )
+        } catch (error) {
+          console.error(
+            '[WebRTC] Answer handling failed:',
+            error,
+          )
+
+          setErrorMessage(
+            error instanceof Error
+              ? error.message
+              : 'Failed to process video answer.',
+          )
+
+          setSignalingStatus(
+            'failed',
+          )
+        }
+      },
+      [applyPendingIceCandidates],
+    )
+
+  // ============================================================
+  // ICE CANDIDATE
+  // ============================================================
+
+  const handleIceCandidate =
+    useCallback(
+      async (message: any) => {
+        if (
+          !message.candidate
+        ) {
+          return
+        }
+
+        const peerConnection =
+          peerConnectionRef.current
+
+        /*
+         * Candidate may arrive before the
+         * offer/answer has been applied.
+         *
+         * Store it temporarily.
+         */
+        if (
+          !peerConnection ||
+          !peerConnection.remoteDescription
+        ) {
+          pendingIceCandidatesRef.current.push(
+            message.candidate,
+          )
+
+          return
+        }
+
+        try {
+          await peerConnection.addIceCandidate(
+            new RTCIceCandidate(
+              message.candidate,
+            ),
+          )
+        } catch (error) {
+          console.warn(
+            '[WebRTC] Failed to add ICE candidate:',
+            error,
+          )
+        }
+      },
+      [],
+    )
+
+  // ============================================================
+  // INCOMING MESSAGE HANDLER
+  // ============================================================
+
+  const handleMessage =
+    useCallback(
+      async (message: any) => {
+        try {
+          console.log(
+            '[Signaling] Received:',
+            message,
+          )
+
+          // ----------------------------------------------------
+          // Connected
+          // ----------------------------------------------------
+
+          if (
+            message.type ===
+            'connected'
+          ) {
+            console.log(
+              '[Signaling] WebSocket connected:',
+              message.client_id,
+            )
+
+            return
+          }
+
+          // ----------------------------------------------------
+          // Auth synced
+          // ----------------------------------------------------
+
+          if (
+            message.type ===
+            'auth-synced'
+          ) {
+            console.log(
+              '[Signaling] Auth synced:',
+              message.clerk_id,
+            )
+
+            return
+          }
+
+          // ----------------------------------------------------
+          // Waiting
+          // ----------------------------------------------------
+
+          if (
+            message.type ===
+            'waiting'
+          ) {
+            setSignalingStatus(
+              'waiting',
+            )
+
+            setIsSearching(true)
+
+            return
+          }
+
+          // ----------------------------------------------------
+          // Matched
+          // ----------------------------------------------------
+
+          if (
+            message.type ===
+            'matched'
+          ) {
+            await handleMatched(
+              message,
+            )
+
+            return
+          }
+
+          // ----------------------------------------------------
+          // Offer
+          // ----------------------------------------------------
+
+          if (
+            message.type ===
+            'offer'
+          ) {
+            await handleOffer(
+              message,
+            )
+
+            return
+          }
+
+          // ----------------------------------------------------
+          // Answer
+          // ----------------------------------------------------
+
+          if (
+            message.type ===
+            'answer'
+          ) {
+            await handleAnswer(
+              message,
+            )
+
+            return
+          }
+
+          // ----------------------------------------------------
+          // ICE
+          // ----------------------------------------------------
+
+          if (
+            message.type ===
+            'ice-candidate'
+          ) {
+            await handleIceCandidate(
+              message,
+            )
+
+            return
+          }
+
+          // ----------------------------------------------------
+          // Chat
+          // ----------------------------------------------------
+
+          if (
+            message.type ===
+            'chat-message'
+          ) {
+            const newItem: ChatMessageItem =
+              {
+                id: String(
+                  Date.now() +
+                    Math.random(),
+                ),
+
+                sender:
+                  'stranger',
+
+                text:
+                  message.text,
+
+                timestamp:
+                  new Date().toLocaleTimeString(
+                    [],
+                    {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    },
+                  ),
+              }
+
+            setChatMessages(
+              (previous) => [
+                ...previous,
+                newItem,
+              ],
+            )
+
+            return
+          }
+
+          // ----------------------------------------------------
+          // Peer disconnected
+          // ----------------------------------------------------
+
+          if (
+            message.type ===
+            'peer-disconnected'
+          ) {
+            console.log(
+              '[Signaling] Peer disconnected.',
+            )
+
+            closePeerConnection()
+
+            setSignalingStatus(
+              'disconnected',
+            )
+
+            setIsSearching(false)
+
+            setChatMessages(
+              (previous) => [
+                ...previous,
+                {
+                  id: String(
+                    Date.now(),
+                  ),
+
+                  sender:
+                    'stranger',
+
+                  text:
+                    '— Stranger disconnected —',
+
+                  timestamp:
+                    new Date().toLocaleTimeString(
+                      [],
+                      {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      },
+                    ),
+                },
+              ],
+            )
+
+            return
+          }
+
+          // ----------------------------------------------------
+          // Backend error
+          // ----------------------------------------------------
+
+          if (
+            message.type ===
+            'error'
+          ) {
+            console.error(
+              '[Signaling] Server error:',
+              message.message,
+            )
+
+            setErrorMessage(
+              message.message ||
+                'Signaling server error.',
+            )
+
+            setIsSearching(false)
+
+            setSignalingStatus(
+              'failed',
+            )
+
+            return
+          }
+        } catch (error) {
+          console.error(
+            '[Signaling] Message handling failed:',
+            error,
+          )
+
+          setErrorMessage(
+            error instanceof Error
+              ? error.message
+              : 'WebRTC signaling failed.',
+          )
+
+          setSignalingStatus(
+            'failed',
+          )
+        }
+      },
+      [
+        closePeerConnection,
+        handleAnswer,
+        handleIceCandidate,
+        handleMatched,
+        handleOffer,
+      ],
+    )
+
+  // Keep latest handler available to WebSocket callbacks.
   useEffect(() => {
-    handleMessageRef.current = handleMessage
+    handleMessageRef.current =
+      handleMessage
   }, [handleMessage])
 
-  const findStranger = useCallback(() => {
-    if (!localStreamRef.current) {
-      setErrorMessage('Camera and microphone access are required before searching.')
-      return
-    }
+  // ============================================================
+  // CHAT
+  // ============================================================
 
-    setErrorMessage(null)
-    setIsSearching(true)
-    setSignalingStatus('connecting')
-    setChatMessages([])
-    closePeerConnection()
+  const sendChatMessage =
+    useCallback(
+      (text: string) => {
+        const trimmed =
+          text.trim()
 
-    const websocket = new WebSocket(getSignalingUrl())
-    websocketRef.current?.close()
-    websocketRef.current = websocket
+        if (!trimmed) {
+          return
+        }
 
-    websocket.onopen = () => {
-      if (user?.id) {
-        sendMessage({ type: 'auth-sync', clerk_id: user.id })
+        const sent =
+          sendMessage({
+            type: 'chat-message',
+            text: trimmed,
+          })
+
+        if (!sent) {
+          setErrorMessage(
+            'Chat connection is not available.',
+          )
+
+          return
+        }
+
+        const newItem: ChatMessageItem =
+          {
+            id: String(
+              Date.now() +
+                Math.random(),
+            ),
+
+            sender: 'me',
+
+            text: trimmed,
+
+            timestamp:
+              new Date().toLocaleTimeString(
+                [],
+                {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                },
+              ),
+          }
+
+        setChatMessages(
+          (previous) => [
+            ...previous,
+            newItem,
+          ],
+        )
+      },
+      [sendMessage],
+    )
+
+  // ============================================================
+  // SKIP STRANGER
+  // ============================================================
+
+  const skipStranger =
+    useCallback(() => {
+      console.log(
+        '[Signaling] Skipping stranger...',
+      )
+
+      closePeerConnection()
+
+      setChatMessages([])
+
+      setPeerProfile(null)
+
+      setIsSearching(true)
+
+      setSignalingStatus(
+        'waiting',
+      )
+
+      sendMessage({
+        type: 'skip',
+      })
+    }, [
+      closePeerConnection,
+      sendMessage,
+    ])
+
+  // ============================================================
+  // LEAVE ROOM
+  // ============================================================
+
+  const leaveRoom =
+    useCallback(() => {
+      console.log(
+        '[Signaling] Leaving room...',
+      )
+
+      sendMessage({
+        type: 'leave',
+      })
+
+      closePeerConnection()
+
+      setChatMessages([])
+
+      setIsSearching(false)
+
+      setSignalingStatus(
+        'idle',
+      )
+
+      const websocket =
+        websocketRef.current
+
+      websocketRef.current =
+        null
+
+      if (websocket) {
+        try {
+          websocket.close()
+        } catch {
+          // Ignore close errors.
+        }
       }
-      sendMessage({ type: 'find-stranger' })
-    }
+    }, [
+      closePeerConnection,
+      sendMessage,
+    ])
 
-    websocket.onmessage = (event) => {
-      void handleMessageRef.current(JSON.parse(event.data))
-    }
+  // ============================================================
+  // FIND STRANGER
+  // ============================================================
 
-    websocket.onerror = () => {
-      setErrorMessage('Unable to connect to the signaling server.')
-      setIsSearching(false)
-      setSignalingStatus('failed')
-    }
+  const findStranger =
+    useCallback(() => {
+      const stream =
+        localStreamRef.current
 
-    websocket.onclose = () => {
-      setIsSearching(false)
-      setSignalingStatus((currentStatus) => (currentStatus === 'connected' ? 'disconnected' : currentStatus))
-    }
-  }, [closePeerConnection, sendMessage, user])
+      if (!stream) {
+        setErrorMessage(
+          'Camera and microphone access are required before searching.',
+        )
+
+        return
+      }
+
+      console.log(
+        '[Signaling] Starting matchmaking...',
+      )
+
+      // --------------------------------------------------------
+      // Reset current state
+      // --------------------------------------------------------
+
+      setErrorMessage(null)
+
+      setChatMessages([])
+
+      setPeerProfile(null)
+
+      setRemoteStream(null)
+
+      setIsSearching(true)
+
+      setSignalingStatus(
+        'connecting',
+      )
+
+      closePeerConnection()
+
+      // --------------------------------------------------------
+      // Close old WebSocket
+      // --------------------------------------------------------
+
+      const oldWebsocket =
+        websocketRef.current
+
+      if (oldWebsocket) {
+        try {
+          oldWebsocket.close()
+        } catch {
+          // Ignore.
+        }
+      }
+
+      websocketRef.current =
+        null
+
+      // --------------------------------------------------------
+      // Create new WebSocket generation
+      // --------------------------------------------------------
+
+      websocketGenerationRef.current += 1
+
+      const generation =
+        websocketGenerationRef.current
+
+      const websocket =
+        new WebSocket(
+          getSignalingUrl(),
+        )
+
+      websocketRef.current =
+        websocket
+
+      console.log(
+        '[Signaling] Connecting to:',
+        getSignalingUrl(),
+      )
+
+      // --------------------------------------------------------
+      // OPEN
+      // --------------------------------------------------------
+
+      websocket.onopen = () => {
+        // Ignore old socket.
+        if (
+          websocketRef.current !==
+          websocket
+        ) {
+          return
+        }
+
+        console.log(
+          '[Signaling] WebSocket OPEN',
+        )
+
+        setSignalingStatus(
+          'connecting',
+        )
+
+        // ----------------------------------------------------
+        // Send Clerk authentication first.
+        // ----------------------------------------------------
+
+        if (user?.id) {
+          console.log(
+            '[Signaling] Sending auth-sync:',
+            user.id,
+          )
+
+          websocket.send(
+            JSON.stringify({
+              type: 'auth-sync',
+              clerk_id: user.id,
+            }),
+          )
+        }
+
+        // ----------------------------------------------------
+        // Start matchmaking.
+        //
+        // Backend processes WebSocket messages sequentially,
+        // so auth-sync is handled before find-stranger.
+        // ----------------------------------------------------
+
+        console.log(
+          '[Signaling] Sending find-stranger...',
+        )
+
+        websocket.send(
+          JSON.stringify({
+            type: 'find-stranger',
+          }),
+        )
+      }
+
+      // --------------------------------------------------------
+      // MESSAGE
+      // --------------------------------------------------------
+
+      websocket.onmessage = (
+        event,
+      ) => {
+        // Ignore messages from old socket.
+        if (
+          websocketRef.current !==
+          websocket
+        ) {
+          return
+        }
+
+        try {
+          const message =
+            JSON.parse(
+              event.data,
+            )
+
+          void handleMessageRef.current(
+            message,
+          )
+        } catch (error) {
+          console.error(
+            '[Signaling] Invalid WebSocket message:',
+            error,
+            event.data,
+          )
+        }
+      }
+
+      // --------------------------------------------------------
+      // ERROR
+      // --------------------------------------------------------
+
+      websocket.onerror = (
+        event,
+      ) => {
+        // Ignore old socket.
+        if (
+          websocketRef.current !==
+          websocket ||
+          generation !==
+            websocketGenerationRef.current
+        ) {
+          return
+        }
+
+        console.error(
+          '[Signaling] WebSocket ERROR:',
+          event,
+        )
+
+        setErrorMessage(
+          'Unable to connect to the signaling server.',
+        )
+
+        setIsSearching(false)
+
+        setSignalingStatus(
+          'failed',
+        )
+      }
+
+      // --------------------------------------------------------
+      // CLOSE
+      // --------------------------------------------------------
+
+      websocket.onclose = (
+        event,
+      ) => {
+        // Ignore old socket.
+        if (
+          websocketRef.current !==
+          websocket ||
+          generation !==
+            websocketGenerationRef.current
+        ) {
+          return
+        }
+
+        console.log(
+          '[Signaling] WebSocket CLOSED:',
+          event.code,
+          event.reason,
+        )
+
+        websocketRef.current =
+          null
+
+        setIsSearching(
+          (current) =>
+            current &&
+            event.code !==
+              1000
+              ? false
+              : current,
+        )
+
+        setSignalingStatus(
+          (currentStatus) => {
+            if (
+              currentStatus ===
+              'connected'
+            ) {
+              return 'disconnected'
+            }
+
+            if (
+              currentStatus ===
+              'idle'
+            ) {
+              return 'idle'
+            }
+
+            if (
+              event.code ===
+              1000
+            ) {
+              return 'idle'
+            }
+
+            return 'disconnected'
+          },
+        )
+      }
+    }, [
+      closePeerConnection,
+      user?.id,
+    ])
+
+  // ============================================================
+  // CLEANUP
+  // ============================================================
 
   useEffect(() => {
     return () => {
-      websocketRef.current?.close()
-      closePeerConnection()
+      websocketGenerationRef.current += 1
+
+      const websocket =
+        websocketRef.current
+
+      websocketRef.current =
+        null
+
+      if (websocket) {
+        try {
+          websocket.close()
+        } catch {
+          // Ignore.
+        }
+      }
+
+      const peerConnection =
+        peerConnectionRef.current
+
+      peerConnectionRef.current =
+        null
+
+      if (peerConnection) {
+        try {
+          peerConnection.close()
+        } catch {
+          // Ignore.
+        }
+      }
+
+      pendingIceCandidatesRef.current =
+        []
     }
-  }, [closePeerConnection])
+  }, [])
+
+  // ============================================================
+  // RETURN
+  // ============================================================
 
   return {
     chatMessages,
