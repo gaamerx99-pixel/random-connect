@@ -63,8 +63,8 @@ export function useWebRtcSignaling(
       async () => {},
     )
 
-  // Used to identify the currently active WebSocket.
-  const websocketGenerationRef = useRef(0)
+  const websocketGenerationRef =
+    useRef(0)
 
   // ============================================================
   // STATE
@@ -154,6 +154,36 @@ export function useWebRtcSignaling(
   }, [localStream])
 
   // ============================================================
+  // STOP LOCAL MEDIA
+  // ============================================================
+
+  const stopLocalMedia =
+    useCallback(() => {
+      const stream =
+        localStreamRef.current
+
+      if (!stream) {
+        return
+      }
+
+      console.log(
+        '[Media] Stopping local camera and microphone...',
+      )
+
+      stream.getTracks().forEach(
+        (track) => {
+          try {
+            track.stop()
+          } catch {
+            // Ignore already stopped tracks.
+          }
+        },
+      )
+
+      localStreamRef.current = null
+    }, [])
+
+  // ============================================================
   // SEND WEBSOCKET MESSAGE
   // ============================================================
 
@@ -239,7 +269,9 @@ export function useWebRtcSignaling(
         pendingIceCandidatesRef.current =
           []
 
-        for (const candidate of pendingCandidates) {
+        for (
+          const candidate of pendingCandidates
+        ) {
           try {
             await peerConnection.addIceCandidate(
               new RTCIceCandidate(candidate),
@@ -261,8 +293,6 @@ export function useWebRtcSignaling(
 
   const createPeerConnection =
     useCallback(() => {
-      // IMPORTANT:
-      // Do NOT destroy an already active connection.
       const existing =
         peerConnectionRef.current
 
@@ -332,8 +362,6 @@ export function useWebRtcSignaling(
           return
         }
 
-        // Fallback for browsers that don't
-        // provide event.streams.
         setRemoteStream((current) => {
           const stream =
             current ??
@@ -371,10 +399,13 @@ export function useWebRtcSignaling(
             state,
           )
 
-          if (state === 'connected') {
+          if (
+            state === 'connected'
+          ) {
             setSignalingStatus(
               'connected',
             )
+
             setErrorMessage(null)
             setIsSearching(false)
           } else if (
@@ -460,11 +491,6 @@ export function useWebRtcSignaling(
           )
         }
 
-        /*
-         * IMPORTANT:
-         * Reuse the existing RTCPeerConnection
-         * if one already exists.
-         */
         const peerConnection =
           createPeerConnection()
 
@@ -663,12 +689,6 @@ export function useWebRtcSignaling(
         const peerConnection =
           peerConnectionRef.current
 
-        /*
-         * Candidate may arrive before the
-         * offer/answer has been applied.
-         *
-         * Store it temporarily.
-         */
         if (
           !peerConnection ||
           !peerConnection.remoteDescription
@@ -960,7 +980,10 @@ export function useWebRtcSignaling(
       ],
     )
 
-  // Keep latest handler available to WebSocket callbacks.
+  // ============================================================
+  // KEEP LATEST MESSAGE HANDLER
+  // ============================================================
+
   useEffect(() => {
     handleMessageRef.current =
       handleMessage
@@ -1035,6 +1058,9 @@ export function useWebRtcSignaling(
         '[Signaling] Skipping stranger...',
       )
 
+      // IMPORTANT:
+      // Do NOT stop local media here.
+      // Camera/mic should remain ON for the next stranger.
       closePeerConnection()
 
       setChatMessages([])
@@ -1071,6 +1097,10 @@ export function useWebRtcSignaling(
 
       closePeerConnection()
 
+      // IMPORTANT:
+      // End call = stop camera + microphone.
+      stopLocalMedia()
+
       setChatMessages([])
 
       setIsSearching(false)
@@ -1095,6 +1125,7 @@ export function useWebRtcSignaling(
     }, [
       closePeerConnection,
       sendMessage,
+      stopLocalMedia,
     ])
 
   // ============================================================
@@ -1183,7 +1214,6 @@ export function useWebRtcSignaling(
       // --------------------------------------------------------
 
       websocket.onopen = () => {
-        // Ignore old socket.
         if (
           websocketRef.current !==
           websocket
@@ -1199,10 +1229,6 @@ export function useWebRtcSignaling(
           'connecting',
         )
 
-        // ----------------------------------------------------
-        // Send Clerk authentication first.
-        // ----------------------------------------------------
-
         if (user?.id) {
           console.log(
             '[Signaling] Sending auth-sync:',
@@ -1216,13 +1242,6 @@ export function useWebRtcSignaling(
             }),
           )
         }
-
-        // ----------------------------------------------------
-        // Start matchmaking.
-        //
-        // Backend processes WebSocket messages sequentially,
-        // so auth-sync is handled before find-stranger.
-        // ----------------------------------------------------
 
         console.log(
           '[Signaling] Sending find-stranger...',
@@ -1242,7 +1261,6 @@ export function useWebRtcSignaling(
       websocket.onmessage = (
         event,
       ) => {
-        // Ignore messages from old socket.
         if (
           websocketRef.current !==
           websocket
@@ -1275,10 +1293,9 @@ export function useWebRtcSignaling(
       websocket.onerror = (
         event,
       ) => {
-        // Ignore old socket.
         if (
           websocketRef.current !==
-          websocket ||
+            websocket ||
           generation !==
             websocketGenerationRef.current
         ) {
@@ -1308,10 +1325,9 @@ export function useWebRtcSignaling(
       websocket.onclose = (
         event,
       ) => {
-        // Ignore old socket.
         if (
           websocketRef.current !==
-          websocket ||
+            websocket ||
           generation !==
             websocketGenerationRef.current
         ) {
@@ -1374,6 +1390,10 @@ export function useWebRtcSignaling(
 
   useEffect(() => {
     return () => {
+      console.log(
+        '[Media] Cleaning up camera and microphone...',
+      )
+
       websocketGenerationRef.current += 1
 
       const websocket =
@@ -1406,6 +1426,27 @@ export function useWebRtcSignaling(
 
       pendingIceCandidatesRef.current =
         []
+
+      // IMPORTANT:
+      // Stop camera and microphone when
+      // the hook/page is unmounted.
+      const stream =
+        localStreamRef.current
+
+      if (stream) {
+        stream.getTracks().forEach(
+          (track) => {
+            try {
+              track.stop()
+            } catch {
+              // Ignore already stopped tracks.
+            }
+          },
+        )
+      }
+
+      localStreamRef.current =
+        null
     }
   }, [])
 
