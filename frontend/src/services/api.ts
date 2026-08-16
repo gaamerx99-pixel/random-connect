@@ -70,3 +70,12 @@ export async function blockUser(token: string, blockedClerkId: string) {
     body: JSON.stringify({ blocked_clerk_id: blockedClerkId }),
   })
 }
+
+export async function getMockProfiles(): Promise<{ profiles: UserProfile[]; count: number }> {
+  return fetchWithAuth('/users/mock-profiles', undefined, { method: 'GET' })
+}
+
+export async function seedMockUsers(): Promise<{ message: string; seeded_count: number }> {
+  return fetchWithAuth('/users/seed-mock-users', undefined, { method: 'POST' })
+}
+

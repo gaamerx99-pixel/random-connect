@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@clerk/clerk-react'
@@ -80,7 +80,36 @@ export function WaitingRoom() {
     sendChatMessage,
     signalingStatus,
     skipStranger,
+    searchSeconds,
+    timeoutLimit,
+    setTimeoutLimit,
+    isTimedOut,
+    startTestMatch,
+    isTestMode,
   } = useWebRtcSignaling(stream)
+
+  const [autoRetryCount, setAutoRetryCount] = useState(5)
+
+  // Auto-refresh search loop on timeout
+  useEffect(() => {
+    let timer: any = null
+    if (isTimedOut && isSearching) {
+      setAutoRetryCount(5)
+      timer = setInterval(() => {
+        setAutoRetryCount((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer)
+            findStranger()
+            return 5
+          }
+          return prev - 1
+        })
+      }, 1000)
+    }
+    return () => {
+      if (timer) clearInterval(timer)
+    }
+  }, [isTimedOut, isSearching, findStranger])
 
   const canSearch = connectionStatus === 'ready'
   const isConnected = signalingStatus === 'connected' || signalingStatus === 'matched'
@@ -133,7 +162,7 @@ export function WaitingRoom() {
 
       <div className="relative flex flex-1 flex-col px-3 py-4 sm:px-6 lg:px-8">
         {/* Navigation Bar */}
-        <nav className="mb-4 flex items-center justify-between">
+        <nav className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <button
               className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-semibold text-white backdrop-blur-xl transition hover:bg-white/[0.1]"
@@ -143,10 +172,39 @@ export function WaitingRoom() {
               <ArrowLeftIcon className="h-4 w-4" />
               <span className="hidden sm:inline">Dashboard</span>
             </button>
+
+            {/* Timeout Selector (30s / 60s) */}
+            <div className="flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-1 text-xs text-zinc-400">
+              <span className="px-2 font-medium">Timeout:</span>
+              <button
+                className={`rounded-full px-2.5 py-1 font-semibold transition ${
+                  timeoutLimit === 30 ? 'bg-indigo-600 text-white shadow-sm' : 'hover:text-white'
+                }`}
+                onClick={() => setTimeoutLimit(30)}
+                type="button"
+              >
+                30s
+              </button>
+              <button
+                className={`rounded-full px-2.5 py-1 font-semibold transition ${
+                  timeoutLimit === 60 ? 'bg-indigo-600 text-white shadow-sm' : 'hover:text-white'
+                }`}
+                onClick={() => setTimeoutLimit(60)}
+                type="button"
+              >
+                60s
+              </button>
+            </div>
           </div>
 
           {/* Connection Status & Peer Info */}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {isTestMode && (
+              <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-300 animate-pulse">
+                ⚡ Test Mode (Simulated User)
+              </span>
+            )}
+
             {isConnected && peerProfile && (
               <div className="hidden sm:flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-4 py-1.5 text-xs text-indigo-200">
                 <span className="font-semibold text-white">{peerProfile.name}</span>
@@ -166,9 +224,26 @@ export function WaitingRoom() {
                 }`}
               />
               <span className="capitalize">
-                {isSearching ? 'Searching Match...' : isConnected ? 'Connected to Stranger' : connectionLabel}
+                {isSearching
+                  ? `Searching (${Math.max(0, timeoutLimit - searchSeconds)}s)`
+                  : isConnected
+                  ? 'Connected to Stranger'
+                  : connectionLabel}
               </span>
             </div>
+
+            {/* Instant Test Mode button */}
+            {!isConnected && (
+              <button
+                className="flex items-center gap-1.5 rounded-full border border-indigo-500/40 bg-indigo-600/20 px-3 py-2 text-xs font-medium text-indigo-200 backdrop-blur-xl hover:bg-indigo-600/30"
+                onClick={startTestMatch}
+                title="Connect with a simulated test bot stranger"
+                type="button"
+              >
+                <span>🤖</span>
+                <span>Test With Bot</span>
+              </button>
+            )}
 
             {isConnected && (
               <>
@@ -280,16 +355,55 @@ export function WaitingRoom() {
                 <VideoPreview
                   emptyDescription={
                     isSearching
-                      ? 'Matching with a stranger based on your preferences...'
+                      ? `Searching for an active user matching your preference... (${Math.max(0, timeoutLimit - searchSeconds)}s remaining)`
                       : 'Click "Find Match" or "Next Stranger" to start video matching.'
                   }
                   emptyTitle={isSearching ? 'Matchmaking in progress' : 'No active stranger connection'}
-                  label={peerProfile ? `Stranger (${peerProfile.name}, ${peerProfile.country})` : 'Stranger (Remote)'}
+                  label={
+                    peerProfile
+                      ? `Stranger (${peerProfile.name}, ${peerProfile.country || 'India'})${isTestMode ? ' [BOT]' : ''}`
+                      : 'Stranger (Remote)'
+                  }
                   muted={false}
                   stream={remoteStream}
                 />
+
+                {/* TIMEOUT & AUTO-REFRESH OVERLAY */}
+                {isSearching && isTimedOut && (
+                  <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/85 p-6 text-center backdrop-blur-md">
+                    <div className="rounded-full bg-amber-500/20 p-3 text-amber-300 mb-3 animate-pulse">
+                      <ExclamationTriangleIcon className="h-8 w-8" />
+                    </div>
+                    <h3 className="text-lg font-bold text-white mb-1">No Active Stranger Found Yet</h3>
+                    <p className="text-xs text-zinc-300 max-w-sm mb-4">
+                      No other user is currently free in the queue for the selected {timeoutLimit}s window.
+                    </p>
+
+                    <div className="mb-4 text-xs font-semibold text-indigo-300 bg-indigo-500/10 border border-indigo-500/20 px-3 py-1.5 rounded-full">
+                      Auto-retrying in {autoRetryCount}s...
+                    </div>
+
+                    <div className="flex flex-wrap justify-center gap-3">
+                      <button
+                        className="rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg transition hover:bg-indigo-500 active:scale-95"
+                        onClick={findStranger}
+                        type="button"
+                      >
+                        🔄 Rejoin / Retry Now
+                      </button>
+                      <button
+                        className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-xs font-semibold text-zinc-200 transition hover:bg-white/20 active:scale-95"
+                        onClick={startTestMatch}
+                        type="button"
+                      >
+                        🤖 Test with Simulated User
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
+
 
             {/* FLOATING ACTION CONTROL BAR */}
             <div className="sticky bottom-2 z-30 mt-4 flex items-center justify-center sm:bottom-4">

@@ -8,6 +8,7 @@ client = AsyncIOMotorClient(
     MONGO_URI,
     tls=True,
     tlsCAFile=certifi.where(),
+    tlsAllowInvalidCertificates=True,
     serverSelectionTimeoutMS=10000,
     connectTimeoutMS=10000,
     socketTimeoutMS=20000,

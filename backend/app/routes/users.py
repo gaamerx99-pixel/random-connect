@@ -554,3 +554,151 @@ async def block_user(
         "message":
             "User blocked successfully."
     }
+
+
+# ============================================================
+# MOCK / RANDOM TEST USER PROFILES
+# ============================================================
+
+MOCK_TEST_USERS = [
+    {
+        "clerk_id": "mock_user_101",
+        "email": "riya.sharma@example.com",
+        "name": "Riya Sharma",
+        "gender": "female",
+        "looking_for": "male",
+        "age": 22,
+        "country": "India",
+        "city": "Mumbai",
+        "languages": ["Hindi", "English"],
+        "interests": ["Music", "Travel", "Photography"],
+        "is_online": True,
+        "is_profile_completed": True,
+        "image": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&auto=format&fit=crop&q=80",
+        "blocked_users": [],
+        "friends": [],
+    },
+    {
+        "clerk_id": "mock_user_102",
+        "email": "aarav.patel@example.com",
+        "name": "Aarav Patel",
+        "gender": "male",
+        "looking_for": "female",
+        "age": 24,
+        "country": "India",
+        "city": "Ahmedabad",
+        "languages": ["Hindi", "Gujarati", "English"],
+        "interests": ["Tech", "Gaming", "Coding"],
+        "is_online": True,
+        "is_profile_completed": True,
+        "image": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80",
+        "blocked_users": [],
+        "friends": [],
+    },
+    {
+        "clerk_id": "mock_user_103",
+        "email": "sneha.verma@example.com",
+        "name": "Sneha Verma",
+        "gender": "female",
+        "looking_for": "anyone",
+        "age": 21,
+        "country": "India",
+        "city": "Delhi",
+        "languages": ["Hindi", "English"],
+        "interests": ["Dancing", "Art", "Movies"],
+        "is_online": True,
+        "is_profile_completed": True,
+        "image": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80",
+        "blocked_users": [],
+        "friends": [],
+    },
+    {
+        "clerk_id": "mock_user_104",
+        "email": "rohit.mehta@example.com",
+        "name": "Rohit Mehta",
+        "gender": "male",
+        "looking_for": "anyone",
+        "age": 25,
+        "country": "India",
+        "city": "Bengaluru",
+        "languages": ["Hindi", "English", "Kannada"],
+        "interests": ["Fitness", "Startups", "Cricket"],
+        "is_online": True,
+        "is_profile_completed": True,
+        "image": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&auto=format&fit=crop&q=80",
+        "blocked_users": [],
+        "friends": [],
+    },
+    {
+        "clerk_id": "mock_user_105",
+        "email": "ananya.singh@example.com",
+        "name": "Ananya Singh",
+        "gender": "female",
+        "looking_for": "male",
+        "age": 23,
+        "country": "India",
+        "city": "Pune",
+        "languages": ["Hindi", "English", "Marathi"],
+        "interests": ["Reading", "Coffee", "Anime"],
+        "is_online": True,
+        "is_profile_completed": True,
+        "image": "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=400&auto=format&fit=crop&q=80",
+        "blocked_users": [],
+        "friends": [],
+    },
+    {
+        "clerk_id": "mock_user_106",
+        "email": "alex.johnson@example.com",
+        "name": "Alex Johnson",
+        "gender": "male",
+        "looking_for": "anyone",
+        "age": 26,
+        "country": "United States",
+        "city": "New York",
+        "languages": ["English", "Spanish"],
+        "interests": ["Music", "Design", "Vlogging"],
+        "is_online": True,
+        "is_profile_completed": True,
+        "image": "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=400&auto=format&fit=crop&q=80",
+        "blocked_users": [],
+        "friends": [],
+    },
+]
+
+
+@router.get("/mock-profiles")
+async def get_mock_profiles():
+    """
+    Get realistic mock user profiles for testing.
+    """
+    return {
+        "profiles": MOCK_TEST_USERS,
+        "count": len(MOCK_TEST_USERS)
+    }
+
+
+@router.post("/seed-mock-users")
+async def seed_mock_users():
+    """
+    Seed or refresh realistic random user profiles in MongoDB.
+    """
+    seeded_count = 0
+    now = datetime.utcnow().isoformat()
+
+    for user in MOCK_TEST_USERS:
+        doc = {
+            **user,
+            "created_at": now,
+            "updated_at": now,
+        }
+        await users_collection.update_one(
+            {"clerk_id": user["clerk_id"]},
+            {"$set": doc},
+            upsert=True,
+        )
+        seeded_count += 1
+
+    return {
+        "message": f"Successfully seeded {seeded_count} test profiles in database.",
+        "seeded_count": seeded_count,
+    }
