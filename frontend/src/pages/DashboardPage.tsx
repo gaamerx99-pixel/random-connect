@@ -551,7 +551,142 @@ export function DashboardPage() {
 
         </div>
 
+        {/* Random Test User Profiles & Omegle Testing Hub */}
+        <div className="mt-8">
+          <GlassPanel className="rounded-3xl p-6 border border-indigo-500/20 bg-gradient-to-b from-indigo-950/20 to-black/40">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-white/10 pb-4">
+              <div>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-500/10 px-3 py-1 text-xs font-semibold text-indigo-300 border border-indigo-500/30">
+                  <span>👥</span> Active Test Profiles & Testing Hub
+                </span>
+                <h3 className="text-xl font-bold mt-2">Simulated Strangers for Testing</h3>
+                <p className="text-xs text-zinc-400">
+                  Use these simulated random user profiles to test Omegle-style video matching and chat without waiting.
+                </p>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  className="rounded-xl border border-indigo-500/30 bg-indigo-600/20 px-4 py-2 text-xs font-semibold text-indigo-200 transition hover:bg-indigo-600/40"
+                  onClick={async () => {
+                    try {
+                      const res = await seedMockUsers()
+                      alert(res.message || 'Seeded mock users successfully!')
+                    } catch (err: any) {
+                      alert('Seeding status: ' + err.message)
+                    }
+                  }}
+                  type="button"
+                >
+                  🌱 Seed Test Profiles in DB
+                </button>
+
+                <button
+                  className="rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 px-4 py-2 text-xs font-bold text-white shadow-lg transition hover:scale-105"
+                  onClick={() => navigate('/waiting')}
+                  type="button"
+                >
+                  🚀 Test Video Call Now
+                </button>
+              </div>
+            </div>
+
+            {/* Test Profiles Cards */}
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {[
+                {
+                  name: 'Riya Sharma',
+                  gender: 'Female',
+                  age: 22,
+                  city: 'Mumbai, India',
+                  interests: ['Music', 'Travel', 'Photography'],
+                  image: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&auto=format&fit=crop&q=80',
+                  status: 'Active / Available',
+                },
+                {
+                  name: 'Aarav Patel',
+                  gender: 'Male',
+                  age: 24,
+                  city: 'Ahmedabad, India',
+                  interests: ['Tech', 'Gaming', 'Coding'],
+                  image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80',
+                  status: 'Active / Available',
+                },
+                {
+                  name: 'Sneha Verma',
+                  gender: 'Female',
+                  age: 21,
+                  city: 'Delhi, India',
+                  interests: ['Dancing', 'Art', 'Movies'],
+                  image: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80',
+                  status: 'Active / Available',
+                },
+                {
+                  name: 'Rohit Mehta',
+                  gender: 'Male',
+                  age: 25,
+                  city: 'Bengaluru, India',
+                  interests: ['Fitness', 'Startups', 'Cricket'],
+                  image: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&auto=format&fit=crop&q=80',
+                  status: 'Active / Available',
+                },
+                {
+                  name: 'Ananya Singh',
+                  gender: 'Female',
+                  age: 23,
+                  city: 'Pune, India',
+                  interests: ['Reading', 'Coffee', 'Anime'],
+                  image: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=400&auto=format&fit=crop&q=80',
+                  status: 'Active / Available',
+                },
+                {
+                  name: 'Alex Johnson',
+                  gender: 'Male',
+                  age: 26,
+                  city: 'New York, USA',
+                  interests: ['Design', 'Music', 'Vlogging'],
+                  image: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=400&auto=format&fit=crop&q=80',
+                  status: 'Active / Available',
+                },
+              ].map((userItem, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center gap-3.5 rounded-2xl border border-white/10 bg-white/[0.04] p-3.5 transition hover:border-indigo-500/40 hover:bg-white/[0.07]"
+                >
+                  <img
+                    alt={userItem.name}
+                    className="h-12 w-12 rounded-full object-cover border border-indigo-500/30"
+                    src={userItem.image}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold text-white truncate">{userItem.name}</h4>
+                      <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                    </div>
+                    <p className="text-[11px] text-zinc-400">{userItem.gender} • {userItem.age} yrs • {userItem.city}</p>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {userItem.interests.slice(0, 2).map((interest, i) => (
+                        <span key={i} className="rounded bg-white/10 px-1.5 py-0.5 text-[9px] text-zinc-300">
+                          {interest}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4 rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-3 text-[11px] text-indigo-300 flex items-center gap-2">
+              <span>💡</span>
+              <span>
+                <strong>Testing Tip:</strong> Open 2 different browser tabs (or 1 normal tab + 1 Incognito tab), click <strong>Start Video Match</strong> in both tabs, and they will immediately connect to each other in real-time! Or use the <strong>Test with Bot</strong> mode when testing solo.
+              </span>
+            </div>
+          </GlassPanel>
+        </div>
+
       </main>
+
 
       {/* Onboarding Profile Modal */}
       {showSetupModal && (
