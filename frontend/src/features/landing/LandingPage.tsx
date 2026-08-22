@@ -61,33 +61,30 @@ function Navbar() {
         </a>
 
         <div className="flex items-center gap-3">
-          <button
-            className="flex items-center gap-2 rounded-xl bg-indigo-600/30 border border-indigo-500/40 px-4 py-2 text-xs font-semibold text-indigo-200 hover:bg-indigo-600/50 transition"
-            onClick={() => navigate('/dashboard')}
-          >
-            <span>Open Dashboard</span>
-            <ArrowRightIcon className="h-3.5 w-3.5" />
-          </button>
-
-          {isClerkConfigured && (
+          {isSignedIn ? (
             <>
-              {isSignedIn ? (
-                <UserButton afterSignOutUrl="/" />
-              ) : (
-                <div className="flex items-center gap-2">
-                  <SignInButton mode="modal">
-                    <Button className="min-h-9 px-3 text-xs" variant="secondary">
-                      Log in
-                    </Button>
-                  </SignInButton>
-                  <SignUpButton mode="modal">
-                    <Button className="min-h-9 px-3 text-xs bg-indigo-600 text-white hover:bg-indigo-500">
-                      Sign Up
-                    </Button>
-                  </SignUpButton>
-                </div>
-              )}
+              <button
+                className="flex items-center gap-2 rounded-xl bg-indigo-600/30 border border-indigo-500/40 px-4 py-2 text-xs font-semibold text-indigo-200 hover:bg-indigo-600/50 transition"
+                onClick={() => navigate('/dashboard')}
+              >
+                <span>Dashboard</span>
+                <ArrowRightIcon className="h-3.5 w-3.5" />
+              </button>
+              <UserButton afterSignOutUrl="/" />
             </>
+          ) : (
+            <div className="flex items-center gap-2">
+              <SignInButton mode="modal">
+                <Button className="min-h-9 px-3.5 text-xs font-medium" variant="secondary">
+                  Log in
+                </Button>
+              </SignInButton>
+              <SignUpButton mode="modal">
+                <Button className="min-h-9 px-3.5 text-xs font-semibold bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:from-indigo-600 hover:to-purple-700 shadow-md shadow-indigo-500/20">
+                  Create Account
+                </Button>
+              </SignUpButton>
+            </div>
           )}
         </div>
       </nav>
@@ -137,6 +134,7 @@ function HeroVisual() {
 
 function HeroSection() {
   const navigate = useNavigate()
+  const { isSignedIn } = useSafeAuth()
 
   return (
     <section id="top" className="relative overflow-hidden">
@@ -161,20 +159,39 @@ function HeroSection() {
             RandomConnect delivers real-time P2P WebRTC video calls, gender-based matchmaking, instant report/block safety controls, and real-time chat.
           </motion.p>
           <motion.div className="mt-9 flex flex-col gap-3 sm:flex-row" variants={fadeUp}>
-            <button
-              className="flex items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 px-8 py-4 font-bold text-white shadow-xl transition hover:scale-[1.02] active:scale-[0.98]"
-              onClick={() => navigate('/dashboard')}
-            >
-              <VideoCameraIcon className="h-6 w-6 animate-pulse" />
-              <span>Go to Dashboard & Start Match</span>
-            </button>
-            <button
-              className="flex items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-6 py-4 font-semibold text-white transition hover:bg-white/20"
-              onClick={() => navigate('/waiting')}
-            >
-              <span>Instant Stranger Video Call</span>
-              <ArrowRightIcon className="h-4 w-4" />
-            </button>
+            {isSignedIn ? (
+              <>
+                <button
+                  className="flex items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 px-8 py-4 font-bold text-white shadow-xl shadow-indigo-500/25 transition hover:scale-[1.02] active:scale-[0.98]"
+                  onClick={() => navigate('/dashboard')}
+                >
+                  <VideoCameraIcon className="h-6 w-6 animate-pulse" />
+                  <span>Go to Dashboard & Start Match</span>
+                </button>
+                <button
+                  className="flex items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-6 py-4 font-semibold text-white transition hover:bg-white/20"
+                  onClick={() => navigate('/waiting')}
+                >
+                  <span>Instant Stranger Video Call</span>
+                  <ArrowRightIcon className="h-4 w-4" />
+                </button>
+              </>
+            ) : (
+              <>
+                <SignUpButton mode="modal">
+                  <button className="flex items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 px-8 py-4 font-bold text-white shadow-xl shadow-indigo-500/25 transition hover:scale-[1.02] active:scale-[0.98]">
+                    <VideoCameraIcon className="h-6 w-6 animate-pulse" />
+                    <span>Create Account & Start Match</span>
+                  </button>
+                </SignUpButton>
+                <SignInButton mode="modal">
+                  <button className="flex items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-6 py-4 font-semibold text-white transition hover:bg-white/20">
+                    <span>Already have account? Log in</span>
+                    <ArrowRightIcon className="h-4 w-4" />
+                  </button>
+                </SignInButton>
+              </>
+            )}
           </motion.div>
 
           <motion.div className="mt-7 flex flex-col gap-3 text-sm text-zinc-400 sm:flex-row sm:items-center" variants={fadeUp}>
