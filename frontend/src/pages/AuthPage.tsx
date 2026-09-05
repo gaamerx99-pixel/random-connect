@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { SignIn, SignUp } from '@clerk/clerk-react'
-import { VideoCameraIcon, EnvelopeIcon } from '@heroicons/react/24/outline'
+import { VideoCameraIcon, EnvelopeIcon, ShieldCheckIcon } from '@heroicons/react/24/outline'
 
 import { useSafeAuth } from '../contexts/AuthContext'
 import { BannerAd } from '../components/ads/BannerAd'
@@ -11,7 +11,9 @@ interface AuthPageProps {
 }
 
 export function AuthPage({ initialMode = 'sign-in' }: AuthPageProps) {
+  const navigate = useNavigate()
   const [mode, setMode] = useState<'sign-in' | 'sign-up'>(initialMode)
+  const [agreedToLegal, setAgreedToLegal] = useState(false)
   const { isClerkConfigured } = useSafeAuth()
 
   return (
@@ -36,7 +38,26 @@ export function AuthPage({ initialMode = 'sign-in' }: AuthPageProps) {
       {/* Main Authentication Card (Screen 9) */}
       <main className="my-auto mx-auto w-full max-w-sm">
         {isClerkConfigured ? (
-          <div className="flex justify-center">
+          <div className="flex flex-col items-center">
+            {/* Prominent Legal Notice & Consent Disclosure for Clerk Authentication */}
+            <div className="mb-4 w-full rounded-xl border border-indigo-100 bg-indigo-50/70 p-3 text-center text-xs text-indigo-950 shadow-xs">
+              <div className="flex items-center justify-center gap-1.5 font-semibold text-indigo-900 mb-1">
+                <ShieldCheckIcon className="h-4 w-4 text-indigo-600" />
+                <span>18+ Adult Platform</span>
+              </div>
+              <p className="text-[11px] leading-relaxed text-indigo-900/90">
+                By continuing to sign in or register, you confirm that you are at least 18 years old and agree to our{' '}
+                <Link to="/terms" target="_blank" className="font-semibold text-indigo-700 hover:underline">
+                  Terms of Service
+                </Link>{' '}
+                and{' '}
+                <Link to="/privacy" target="_blank" className="font-semibold text-indigo-700 hover:underline">
+                  Privacy Policy
+                </Link>
+                .
+              </p>
+            </div>
+
             {mode === 'sign-in' ? (
               <SignIn
                 routing="path"
@@ -81,11 +102,38 @@ export function AuthPage({ initialMode = 'sign-in' }: AuthPageProps) {
                 : 'Join RandomConnect and meet new people.'}
             </p>
 
-            {/* Social / Email Action Buttons */}
-            <div className="mt-6 space-y-3">
-              <Link
-                to="/dashboard"
-                className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-gray-200 bg-white py-2.5 px-4 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition"
+            {/* Explicit 18+ and Legal Agreement Checkbox for Demo/Fallback Auth */}
+            <label
+              htmlFor="auth-legal-checkbox"
+              className="mt-5 flex items-start gap-2.5 rounded-xl border border-gray-200 bg-gray-50/80 p-3 text-left cursor-pointer hover:bg-gray-50 transition select-none"
+            >
+              <input
+                id="auth-legal-checkbox"
+                type="checkbox"
+                checked={agreedToLegal}
+                onChange={(e) => setAgreedToLegal(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+              />
+              <span className="text-xs text-gray-700 leading-tight">
+                I confirm that I am 18 years old or older and I agree to the{' '}
+                <Link to="/terms" target="_blank" className="font-semibold text-indigo-600 hover:underline">
+                  Terms of Service
+                </Link>{' '}
+                and{' '}
+                <Link to="/privacy" target="_blank" className="font-semibold text-indigo-600 hover:underline">
+                  Privacy Policy
+                </Link>
+                .
+              </span>
+            </label>
+
+            {/* Social / Email Action Buttons (enabled only upon legal consent checkbox) */}
+            <div className="mt-4 space-y-3">
+              <button
+                type="button"
+                disabled={!agreedToLegal}
+                onClick={() => agreedToLegal && navigate('/dashboard')}
+                className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-gray-200 bg-white py-2.5 px-4 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 <svg className="h-4 w-4" viewBox="0 0 24 24">
                   <path
@@ -106,38 +154,27 @@ export function AuthPage({ initialMode = 'sign-in' }: AuthPageProps) {
                   />
                 </svg>
                 <span>Continue with Google</span>
-              </Link>
+              </button>
 
-              <Link
-                to="/dashboard"
-                className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-gray-200 bg-white py-2.5 px-4 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition"
+              <button
+                type="button"
+                disabled={!agreedToLegal}
+                onClick={() => agreedToLegal && navigate('/dashboard')}
+                className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-gray-200 bg-white py-2.5 px-4 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 <EnvelopeIcon className="h-4 w-4 text-gray-400" />
                 <span>Continue with Email</span>
-              </Link>
+              </button>
             </div>
 
-            {/* Terms and Privacy notice */}
-            <p className="mt-6 text-[11px] text-gray-400 leading-relaxed">
-              By continuing, you agree to our{' '}
-              <a href="#terms" className="text-indigo-600 hover:underline">
-                Terms of Service
-              </a>{' '}
-              and{' '}
-              <a href="#privacy" className="text-indigo-600 hover:underline">
-                Privacy Policy
-              </a>
-              .
-            </p>
-
             {/* Toggle Mode Link */}
-            <div className="mt-4 pt-4 border-t border-gray-100 text-xs text-gray-500">
+            <div className="mt-5 pt-4 border-t border-gray-100 text-xs text-gray-500">
               {mode === 'sign-in' ? (
                 <p>
                   Don't have an account?{' '}
                   <button
                     onClick={() => setMode('sign-up')}
-                    className="font-semibold text-indigo-600 hover:underline"
+                    className="font-semibold text-indigo-600 hover:underline cursor-pointer"
                   >
                     Create Account
                   </button>
@@ -147,7 +184,7 @@ export function AuthPage({ initialMode = 'sign-in' }: AuthPageProps) {
                   Already have an account?{' '}
                   <button
                     onClick={() => setMode('sign-in')}
-                    className="font-semibold text-indigo-600 hover:underline"
+                    className="font-semibold text-indigo-600 hover:underline cursor-pointer"
                   >
                     Sign In
                   </button>
@@ -161,9 +198,23 @@ export function AuthPage({ initialMode = 'sign-in' }: AuthPageProps) {
         <BannerAd slotId="auth-page-bottom" className="mt-6" />
       </main>
 
-      {/* Subtle Footer */}
-      <footer className="text-center text-xs text-gray-400">
-        © {new Date().getFullYear()} RandomConnect
+      {/* Subtle Footer with Legal Links */}
+      <footer className="text-center text-xs text-gray-400 space-y-2">
+        <div className="flex flex-wrap justify-center gap-4 text-[11px] text-gray-500">
+          <Link to="/terms" className="hover:text-indigo-600 transition">
+            Terms of Service
+          </Link>
+          <Link to="/privacy" className="hover:text-indigo-600 transition">
+            Privacy Policy
+          </Link>
+          <Link to="/safety" className="hover:text-indigo-600 transition">
+            Safety
+          </Link>
+          <Link to="/contact" className="hover:text-indigo-600 transition">
+            Contact
+          </Link>
+        </div>
+        <p>© {new Date().getFullYear()} RandomConnect. 18+ Adults Only.</p>
       </footer>
     </div>
   )

@@ -7,6 +7,7 @@ import {
   ClockIcon,
   AdjustmentsHorizontalIcon,
   ShieldExclamationIcon,
+  ShieldCheckIcon,
   HandRaisedIcon,
   VideoCameraIcon,
   CheckCircleIcon,
@@ -48,6 +49,7 @@ export function WaitingRoom() {
 
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [showDevicesDrawer, setShowDevicesDrawer] = useState(false)
+  const [showSafetyModal, setShowSafetyModal] = useState(false)
   const [showReportModal, setShowReportModal] = useState(false)
   const [reportReason, setReportReason] = useState('Inappropriate Behavior')
   const [reportDetails, setReportDetails] = useState('')
@@ -320,8 +322,20 @@ export function WaitingRoom() {
             )}
           </div>
 
-          {/* Right: Actions (Test With Bot, Safety & Devices) */}
+          {/* Right: Actions (Test With Bot, Safety, Report/Block & Devices) */}
           <div className="flex items-center gap-2">
+            {/* Safety Information Quick Access (always visible) */}
+            <button
+              onClick={() => setShowSafetyModal(true)}
+              type="button"
+              className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 hover:text-indigo-600 transition shadow-xs cursor-pointer"
+              title="View Safety Tips & Guidelines"
+              aria-label="Safety tips and guidelines"
+            >
+              <ShieldCheckIcon className="h-4 w-4 text-indigo-600" />
+              <span className="hidden sm:inline">Safety</span>
+            </button>
+
             {/* Test With Bot secondary testing button */}
             <button
               onClick={startTestMatch}
@@ -334,22 +348,26 @@ export function WaitingRoom() {
             </button>
 
             {isConnected && (
-              <>
+              <div className="flex items-center gap-1.5 border-l border-gray-200 pl-2">
                 <button
                   onClick={() => setShowReportModal(true)}
-                  className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-gray-50 transition cursor-pointer"
+                  className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100 transition shadow-xs cursor-pointer"
                   title="Report user"
+                  aria-label="Report user"
                 >
                   <ShieldExclamationIcon className="h-4 w-4" />
+                  <span className="hidden sm:inline">Report</span>
                 </button>
                 <button
                   onClick={handleBlockUser}
-                  className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-gray-50 transition cursor-pointer"
+                  className="flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 hover:text-red-600 transition shadow-xs cursor-pointer"
                   title="Block user"
+                  aria-label="Block user"
                 >
                   <HandRaisedIcon className="h-4 w-4" />
+                  <span className="hidden sm:inline">Block</span>
                 </button>
-              </>
+              </div>
             )}
 
             <button
@@ -566,6 +584,63 @@ export function WaitingRoom() {
                 className="rounded-lg bg-red-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
               >
                 Submit Report
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Safety Information Quick Modal */}
+      {showSafetyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
+          <div className="relative w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <ShieldCheckIcon className="h-5 w-5 text-indigo-600" />
+                <h3 className="text-base font-bold text-gray-900">Safety & Guidelines</h3>
+              </div>
+              <button
+                onClick={() => setShowSafetyModal(false)}
+                className="rounded-lg p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition cursor-pointer"
+              >
+                <XMarkIcon className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3 text-xs text-gray-600 leading-relaxed">
+              <p className="font-semibold text-gray-800">
+                RandomConnect connects you with people you may not know. Stay cautious and protect yourself:
+              </p>
+              <ul className="space-y-1.5 list-disc pl-4 text-gray-600">
+                <li>Never share passwords, credit card info, bank details, or home address.</li>
+                <li>Be respectful. Harassment, nudity, hate speech, and abuse are strictly prohibited.</li>
+                <li>If someone makes you uncomfortable, end the call, block them, and report them.</li>
+                <li>Never send money, gift cards, or cryptocurrency to strangers.</li>
+              </ul>
+            </div>
+
+            <div className="mt-5 pt-3 border-t border-gray-100 flex items-center justify-between">
+              <div className="flex items-center gap-3 text-xs">
+                <Link
+                  to="/safety"
+                  target="_blank"
+                  className="font-semibold text-indigo-600 hover:underline"
+                >
+                  Full Safety Guide ↗
+                </Link>
+                <Link
+                  to="/community-guidelines"
+                  target="_blank"
+                  className="text-gray-500 hover:underline"
+                >
+                  Guidelines ↗
+                </Link>
+              </div>
+              <button
+                onClick={() => setShowSafetyModal(false)}
+                className="rounded-xl bg-indigo-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 transition cursor-pointer"
+              >
+                Got it
               </button>
             </div>
           </div>

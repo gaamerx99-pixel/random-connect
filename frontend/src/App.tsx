@@ -10,6 +10,12 @@ import { EditProfilePage } from './pages/EditProfilePage'
 import { FriendsPage } from './pages/FriendsPage'
 import { AuthPage } from './pages/AuthPage'
 import AdminPage from './pages/AdminPage'
+import { TermsPage } from './pages/legal/TermsPage'
+import { PrivacyPage } from './pages/legal/PrivacyPage'
+import { CommunityGuidelinesPage } from './pages/legal/CommunityGuidelinesPage'
+import { SafetyPage } from './pages/legal/SafetyPage'
+import { CookiePolicyPage } from './pages/legal/CookiePolicyPage'
+import { ContactPage } from './pages/legal/ContactPage'
 
 function App() {
   return (
@@ -18,6 +24,14 @@ function App() {
         <Route element={<HomePage />} path="/" />
         <Route element={<AuthPage initialMode="sign-in" />} path="/sign-in" />
         <Route element={<AuthPage initialMode="sign-up" />} path="/sign-up" />
+
+        {/* Public Legal, Safety & Compliance Routes */}
+        <Route element={<TermsPage />} path="/terms" />
+        <Route element={<PrivacyPage />} path="/privacy" />
+        <Route element={<CommunityGuidelinesPage />} path="/community-guidelines" />
+        <Route element={<SafetyPage />} path="/safety" />
+        <Route element={<CookiePolicyPage />} path="/cookies" />
+        <Route element={<ContactPage />} path="/contact" />
 
         <Route
           element={

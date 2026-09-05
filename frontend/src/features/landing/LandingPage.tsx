@@ -167,8 +167,8 @@ export function LandingPage() {
       {/* Main Content Area */}
       <main className="flex-1">
         {/* 2. Hero Section */}
-        <section className="mx-auto max-w-4xl px-4 pt-14 pb-10 text-center">
-          <div className="mx-auto mb-4 inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
+        <section className="mx-auto max-w-4xl px-4 pt-11 pb-8 text-center">
+          <div className="mx-auto mb-3.5 inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
             <span>🔞</span>
             <span>18+ Adults Only Platform</span>
           </div>
@@ -177,11 +177,11 @@ export function LandingPage() {
             Meet someone <span className="text-indigo-600">new.</span>
           </h1>
 
-          <p className="mx-auto mt-4 max-w-2xl text-base sm:text-lg text-gray-500 leading-relaxed">
-            Start a random video conversation with people around the world.
+          <p className="mx-auto mt-3.5 max-w-2xl text-base sm:text-lg text-gray-500 leading-relaxed">
+            Start a random video conversation with someone new.
           </p>
 
-          <div className="mt-7 flex flex-wrap items-center justify-center gap-3.5">
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-3.5">
             <button
               onClick={handleStartConnecting}
               className="rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 transition active:scale-[0.99] inline-flex items-center gap-2 cursor-pointer"
@@ -250,7 +250,7 @@ export function LandingPage() {
               How It Works
             </h2>
             <p className="mt-2 text-sm sm:text-base text-gray-500">
-              Meeting new people is simple, fast, and secure.
+              Meeting new people is simple and easy.
             </p>
           </div>
 
@@ -342,7 +342,7 @@ export function LandingPage() {
               Ready to meet someone new?
             </h2>
             <p className="mt-2 text-sm sm:text-base text-gray-500 max-w-xl mx-auto">
-              Join thousands of people having friendly, spontaneous video conversations right now.
+              Start a friendly, spontaneous video conversation right now.
             </p>
             <div className="mt-6 flex justify-center">
               <button
@@ -357,9 +357,47 @@ export function LandingPage() {
         </section>
       </main>
 
-      {/* 9. Footer */}
-      <footer className="border-t border-gray-100 bg-white py-6 text-center text-xs text-gray-400">
-        <p>© {new Date().getFullYear()} RandomConnect. All rights reserved.</p>
+      {/* 9. Compact Legal Footer */}
+      <footer className="border-t border-gray-200 bg-white py-8 text-xs text-gray-500">
+        <div className="mx-auto max-w-5xl px-4 sm:px-6">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            {/* Brand & 18+ Notice */}
+            <div className="flex items-center gap-3">
+              <span className="font-bold text-gray-900">Random<span className="text-indigo-600">Connect</span></span>
+              <span className="text-gray-300">|</span>
+              <span className="inline-flex items-center gap-1 font-medium text-gray-600 text-[11px]">
+                <span>🔞</span>
+                <span>18+ Adults Only</span>
+              </span>
+            </div>
+
+            {/* Compact Legal Links */}
+            <nav className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs font-medium text-gray-600" aria-label="Legal and safety links">
+              <Link to="/terms" className="hover:text-indigo-600 transition">
+                Terms of Service
+              </Link>
+              <Link to="/privacy" className="hover:text-indigo-600 transition">
+                Privacy Policy
+              </Link>
+              <Link to="/community-guidelines" className="hover:text-indigo-600 transition">
+                Community Guidelines
+              </Link>
+              <Link to="/safety" className="hover:text-indigo-600 transition">
+                Safety
+              </Link>
+              <Link to="/cookies" className="hover:text-indigo-600 transition">
+                Cookie Policy
+              </Link>
+              <Link to="/contact" className="hover:text-indigo-600 transition">
+                Contact / Grievance
+              </Link>
+            </nav>
+          </div>
+
+          <div className="mt-6 pt-4 border-t border-gray-100 text-center text-[11px] text-gray-400">
+            <p>© {new Date().getFullYear()} RandomConnect. All rights reserved. Intended strictly for adults 18 years and older.</p>
+          </div>
+        </div>
       </footer>
 
       {/* 18+ Age Warning Modal (non-bypassable confirmation gate) */}
