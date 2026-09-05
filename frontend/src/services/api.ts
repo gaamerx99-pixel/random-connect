@@ -19,6 +19,17 @@ export interface UserProfile {
   friends: string[]
 }
 
+export interface FemaleRewardState {
+  ads_completed: number
+  ads_required: number
+  female_match_credits: number
+  female_match_credits_max: number
+  female_reward_unlocks: number
+  female_match_credits_consumed: number
+  test_mode: boolean
+  provider_configured: boolean
+}
+
 export async function fetchWithAuth(url: string, token?: string | null, options: RequestInit = {}) {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -68,6 +79,24 @@ export async function blockUser(token: string, blockedClerkId: string) {
   return fetchWithAuth('/users/block', token, {
     method: 'POST',
     body: JSON.stringify({ blocked_clerk_id: blockedClerkId }),
+  })
+}
+
+export async function getFemaleRewardState(token: string): Promise<FemaleRewardState> {
+  return fetchWithAuth('/users/rewards/female-match', token, { method: 'GET' })
+}
+
+export async function completeFemaleRewardedAd(
+  token: string,
+  provider?: string,
+  rewardEventId?: string,
+): Promise<{ duplicate: boolean; reward_state: FemaleRewardState }> {
+  return fetchWithAuth('/users/rewards/female-ad-completion', token, {
+    method: 'POST',
+    body: JSON.stringify({
+      provider,
+      reward_event_id: rewardEventId,
+    }),
   })
 }
 

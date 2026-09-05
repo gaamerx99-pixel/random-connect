@@ -115,3 +115,13 @@ class UserReportCreate(BaseModel):
 
 class UserBlockCreate(BaseModel):
     blocked_clerk_id: str
+
+
+# ============================================================
+# REWARDED ADS
+# ============================================================
+
+class RewardedAdCompletionCreate(BaseModel):
+    provider: Optional[str] = None
+
+    reward_event_id: Optional[str] = None

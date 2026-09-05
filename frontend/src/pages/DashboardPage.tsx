@@ -1,24 +1,27 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { UserButton } from '@clerk/clerk-react'
+import { useNavigate, Link } from 'react-router-dom'
 import {
-  ChatBubbleLeftRightIcon,
-  Cog6ToothIcon,
-  ShieldExclamationIcon,
-  UserGroupIcon,
   VideoCameraIcon,
-  PencilSquareIcon,
-  ExclamationTriangleIcon,
+  UserGroupIcon,
+  NoSymbolIcon,
+  ArrowRightIcon,
+  CheckCircleIcon,
+  SparklesIcon,
 } from '@heroicons/react/24/outline'
 
-import { GlassPanel } from '../components/ui/GlassPanel'
 import { useSafeAuth } from '../contexts/AuthContext'
+import { Header } from '../components/common/Header'
+import { BannerAd } from '../components/ads/BannerAd'
+import { FemaleRewardModal } from '../components/rewards/FemaleRewardModal'
 import { ProfileSetupModal } from '../features/profile/ProfileSetupModal'
 import {
   getMyProfile,
-  syncUserWithBackend,
   updateMyProfile,
+  getFemaleRewardState,
+  completeFemaleRewardedAd,
+  syncUserWithBackend,
   UserProfile,
+  FemaleRewardState,
 } from '../services/api'
 
 const DEFAULT_GUEST_PROFILE: UserProfile = {
@@ -26,47 +29,42 @@ const DEFAULT_GUEST_PROFILE: UserProfile = {
   email: 'guest@randomconnect.app',
   name: 'Rahul (Guest User)',
   gender: 'male',
-  looking_for: 'female',
-  age: 23,
+  looking_for: 'anyone',
+  age: 21,
   country: 'India',
-  city: 'Delhi',
-  languages: ['Hindi', 'English'],
-  interests: ['Gaming', 'Music'],
+  city: 'Mumbai',
+  languages: ['English', 'Hindi'],
+  interests: ['Tech', 'Gaming', 'Music'],
+  bio: 'Friendly conversationalist looking to meet interesting people from around the world.',
   is_online: true,
   is_profile_completed: true,
   blocked_users: [],
   friends: [],
 }
 
+const DEFAULT_LOCKED_REWARD_STATE: FemaleRewardState = {
+  ads_completed: 0,
+  ads_required: 1,
+  female_match_credits: 0,
+  female_match_credits_max: 1,
+  female_reward_unlocks: 0,
+  female_match_credits_consumed: 0,
+  test_mode: true,
+  provider_configured: true,
+}
+
 export function DashboardPage() {
   const navigate = useNavigate()
+  const { isLoaded, isSignedIn, user, getToken } = useSafeAuth()
 
-  const {
-    isLoaded,
-    isSignedIn,
-    user,
-    getToken,
-    isClerkConfigured,
-  } = useSafeAuth()
-
-  const [profile, setProfile] = useState<UserProfile>(
-    DEFAULT_GUEST_PROFILE,
-  )
-
+  const [profile, setProfile] = useState<UserProfile>(DEFAULT_GUEST_PROFILE)
   const [showSetupModal, setShowSetupModal] = useState(false)
-  const [token, setToken] = useState<string>('')
+  const [token, setToken] = useState('')
+  const [femaleRewardState, setFemaleRewardState] = useState<FemaleRewardState>(DEFAULT_LOCKED_REWARD_STATE)
+  const [rewardLoading, setRewardLoading] = useState(false)
+  const [rewardError, setRewardError] = useState('')
+  const [showRewardModal, setShowRewardModal] = useState(false)
 
-  /*
-   * Get the name directly from Clerk.
-   *
-   * Priority:
-   * 1. fullName
-   * 2. firstName + lastName
-   * 3. firstName
-   * 4. username
-   * 5. backend profile name
-   * 6. Friend
-   */
   const clerkDisplayName =
     user?.fullName ||
     [user?.firstName, user?.lastName].filter(Boolean).join(' ') ||
@@ -74,70 +72,52 @@ export function DashboardPage() {
     user?.username ||
     ''
 
-  const displayName =
-    clerkDisplayName ||
-    (isSignedIn ? profile.name : 'Rahul (Guest User)') ||
-    'Friend'
+  const displayName = clerkDisplayName || (isSignedIn ? profile.name : 'Shivam') || 'Shivam'
 
-  const displayEmail =
-    user?.primaryEmailAddress?.emailAddress ||
-    user?.emailAddresses?.[0]?.emailAddress ||
-    profile.email ||
-    'Not available'
-
+  // Load user data & reward state
   useEffect(() => {
     let cancelled = false
 
     async function loadUserData() {
       try {
         const authToken = (await getToken()) || 'mock-dev-token'
-
         if (cancelled) return
-
         setToken(authToken)
 
         if (isSignedIn) {
-          /*
-           * Sync the currently logged-in Clerk user with backend.
-           */
           await syncUserWithBackend(authToken)
-
           if (cancelled) return
 
-          /*
-           * Load profile belonging to the current Clerk account.
-           */
           const myProfile = await getMyProfile(authToken)
-
           if (cancelled) return
-
           setProfile(myProfile)
+
+          try {
+            const reward = await getFemaleRewardState(authToken)
+            if (!cancelled) setFemaleRewardState(reward)
+          } catch (rewardErr) {
+            console.warn('Female reward state check notice:', rewardErr)
+          }
 
           if (!myProfile.is_profile_completed) {
             setShowSetupModal(true)
           }
         } else {
-          /*
-           * Guest/demo mode.
-           */
           setProfile(DEFAULT_GUEST_PROFILE)
+          try {
+            const reward = await getFemaleRewardState(authToken)
+            if (!cancelled) setFemaleRewardState(reward)
+          } catch (rewardErr) {
+            console.warn('Guest reward state notice:', rewardErr)
+          }
         }
       } catch (err) {
-        console.warn(
-          'Backend sync warning:',
-          err,
-        )
-
-        /*
-         * If backend fails but Clerk is logged in,
-         * keep the Clerk identity instead of showing Rahul.
-         */
+        console.warn('Backend sync notice:', err)
         if (isSignedIn && user) {
-          setProfile((previous) => ({
-            ...previous,
+          setProfile((prev) => ({
+            ...prev,
             clerk_id: user.id,
-            name: clerkDisplayName || previous.name,
-            email: displayEmail,
+            name: clerkDisplayName || prev.name,
           }))
         }
       }
@@ -150,548 +130,291 @@ export function DashboardPage() {
     return () => {
       cancelled = true
     }
-  }, [
-    isLoaded,
-    isSignedIn,
-    getToken,
-    user?.id,
-  ])
+  }, [isLoaded, isSignedIn, getToken, user?.id])
 
-  const handleUpdateLookingFor = async (
-    newPreference: string,
-  ) => {
-    setProfile((previous) => ({
-      ...previous,
+  // Update Looking For preference (Female Only, Male Only, Anyone)
+  const handleUpdateLookingFor = async (newPreference: string) => {
+    setProfile((prev) => ({
+      ...prev,
       looking_for: newPreference,
     }))
 
+    const effectiveToken = token || 'mock-dev-token'
     if (isSignedIn && token) {
       try {
-        const res = await updateMyProfile(
-          token,
-          {
-            looking_for: newPreference,
-          },
-        )
-
-        setProfile(res.user)
+        const response = await updateMyProfile(token, { looking_for: newPreference })
+        setProfile(response.user)
       } catch (err) {
-        console.error(
-          'Failed to update backend preference:',
-          err,
-        )
+        console.error('Failed to update preference:', err)
+      }
+    }
+
+    if (newPreference === 'female') {
+      try {
+        const state = await getFemaleRewardState(effectiveToken)
+        setFemaleRewardState(state)
+      } catch (err) {
+        console.warn('Failed to refresh female reward state:', err)
       }
     }
   }
 
+  // Rewarded ad completion
+  const handleCompleteRewardedAd = async (provider?: string, rewardEventId?: string) => {
+    const effectiveToken = token || 'mock-dev-token'
+    try {
+      setRewardLoading(true)
+      setRewardError('')
+      const response = await completeFemaleRewardedAd(
+        effectiveToken,
+        femaleRewardState?.test_mode ? 'dev' : provider,
+        rewardEventId,
+      )
+      setFemaleRewardState(response.reward_state)
+      return response
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Rewarded ad verification failed.'
+      setRewardError(msg)
+      throw err
+    } finally {
+      setRewardLoading(false)
+    }
+  }
+
+  // Start Video Match button click flow
+  const handleStartVideoMatch = async () => {
+    const lookingFor = (profile?.looking_for || '').trim().toLowerCase()
+
+    // 1. Anyone or Male matching: direct navigation
+    if (lookingFor !== 'female') {
+      navigate('/waiting', { state: { autoStart: true } })
+      return
+    }
+
+    // 2. Female users: exempt from ad requirement
+    const gender = (profile?.gender || '').trim().toLowerCase()
+    if (gender !== 'male') {
+      navigate('/waiting', { state: { autoStart: true } })
+      return
+    }
+
+    // 3. Male user looking for female: check credits
+    let currentCredits = femaleRewardState.female_match_credits || 0
+    const effectiveToken = token || 'mock-dev-token'
+
+    try {
+      setRewardLoading(true)
+      setRewardError('')
+      const freshState = await getFemaleRewardState(effectiveToken)
+      setFemaleRewardState(freshState)
+      currentCredits = freshState.female_match_credits || 0
+    } catch (err) {
+      console.warn('Using local credit state:', err)
+    } finally {
+      setRewardLoading(false)
+    }
+
+    if (currentCredits > 0) {
+      navigate('/waiting', { state: { autoStart: true } })
+      return
+    }
+
+    // Male user + Female Only + 0 credits: open reward modal
+    setShowRewardModal(true)
+  }
+
+  const selectedMode = (profile?.looking_for || 'anyone').toLowerCase()
+  const femaleCredits = femaleRewardState?.female_match_credits || 0
+  const userInitial = (displayName.charAt(0) || 'S').toUpperCase()
+
+  const statsMatches = 12
+  const statsFriends = profile.friends?.length ? profile.friends.length : 5
+  const statsBlocked = profile.blocked_users?.length ? profile.blocked_users.length : 3
+
   return (
-    <div className="min-h-screen bg-[#07080d] text-white">
+    <div className="min-h-screen bg-[#fafbfc] text-gray-900 flex flex-col">
+      {/* Shared Clean Header */}
+      <Header displayName={displayName} />
 
-      {/* Navbar */}
-      <nav className="flex items-center justify-between border-b border-white/10 px-6 py-4 backdrop-blur-xl">
-
-        <div className="flex items-center gap-3">
-
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 font-bold text-white shadow-lg shadow-indigo-500/20">
-            RC
-          </div>
-
-          <div>
-            <h1 className="font-bold text-lg leading-tight">
-              RandomConnect
+      {/* Main Content Area */}
+      <main className="flex-1 px-4 py-8 sm:py-10">
+        <div className="mx-auto max-w-3xl">
+          {/* Welcome Heading */}
+          <div className="mb-8">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900">
+              Welcome back, {displayName}!
             </h1>
-
-            <p className="text-xs text-zinc-400">
-              Match & Video Chat Dashboard
+            <p className="mt-1.5 text-sm text-gray-500">
+              Choose who you'd like to meet and start a conversation.
             </p>
           </div>
 
-        </div>
-
-        <div className="flex items-center gap-4">
-
-          <button
-            className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs font-semibold hover:bg-white/20"
-            onClick={() => navigate('/')}
-          >
-            Home
-          </button>
-
-          {isClerkConfigured && isSignedIn && (
-            <UserButton afterSignOutUrl="/" />
-          )}
-
-        </div>
-      </nav>
-
-      {/* Main Content */}
-      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
-
-        {/* Demo Mode Warning */}
-        {!isClerkConfigured && (
-          <div className="mb-6 flex items-center gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-200">
-
-            <ExclamationTriangleIcon className="h-5 w-5 shrink-0 text-amber-400" />
-
-            <div>
-
-              <p className="font-semibold">
-                Development Demo Mode Active
-              </p>
-
-              <p className="text-[11px] text-amber-300/80">
-                Clerk key is not set in `.env` yet.
-                You are using the Guest Profile for instant
-                video chat matching!
-              </p>
-
-            </div>
-          </div>
-        )}
-
-        {/* Welcome Banner */}
-        <div className="mb-8 overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-r from-indigo-900/40 via-purple-900/20 to-black p-6 sm:p-8">
-
-          <div className="flex flex-col justify-between gap-6 md:flex-row md:items-center">
-
-            <div>
-
-              <span className="mb-2 inline-block rounded-full bg-indigo-500/20 px-3 py-1 text-xs font-semibold text-indigo-300">
-                Matchmaking Queue Ready
-              </span>
-
-              <h2 className="text-2xl font-bold sm:text-3xl">
-                Welcome, {displayName}!
-              </h2>
-
-              <p className="mt-1 max-w-xl text-sm text-zinc-300">
-                Choose your gender preference below and click
-                start to pair with real online strangers.
-              </p>
-
-            </div>
-
-            <button
-              className="flex items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 px-8 py-4 font-bold text-white shadow-xl transition hover:scale-[1.02] active:scale-[0.98]"
-              onClick={() => navigate('/waiting')}
-            >
-
-              <VideoCameraIcon className="h-6 w-6 animate-pulse" />
-
-              <span>
-                Start Video Match
-              </span>
-
-            </button>
-
-          </div>
-        </div>
-
-        {/* User Stats Grid */}
-        <div className="mb-8 grid gap-4 sm:grid-cols-3">
-
-          <GlassPanel className="rounded-2xl p-5">
-
-            <div className="flex items-center justify-between">
-
-              <div>
-
-                <p className="text-xs text-zinc-400">
-                  Total Video Matches
-                </p>
-
-                <h3 className="mt-1 text-2xl font-bold text-white">
-                  0
-                </h3>
-
-              </div>
-
-              <div className="rounded-xl bg-indigo-500/20 p-3 text-indigo-400">
-                <ChatBubbleLeftRightIcon className="h-6 w-6" />
-              </div>
-
-            </div>
-
-          </GlassPanel>
-
-          <GlassPanel className="rounded-2xl p-5">
-
-            <div className="flex items-center justify-between">
-
-              <div>
-
-                <p className="text-xs text-zinc-400">
-                  Friends List
-                </p>
-
-                <h3 className="mt-1 text-2xl font-bold text-white">
-                  {profile.friends?.length || 0}
-                </h3>
-
-              </div>
-
-              <div className="rounded-xl bg-purple-500/20 p-3 text-purple-400">
-                <UserGroupIcon className="h-6 w-6" />
-              </div>
-
-            </div>
-
-          </GlassPanel>
-
-          <GlassPanel className="rounded-2xl p-5">
-
-            <div className="flex items-center justify-between">
-
-              <div>
-
-                <p className="text-xs text-zinc-400">
-                  Blocked Strangers
-                </p>
-
-                <h3 className="mt-1 text-2xl font-bold text-white">
-                  {profile.blocked_users?.length || 0}
-                </h3>
-
-              </div>
-
-              <div className="rounded-xl bg-amber-500/20 p-3 text-amber-400">
-                <ShieldExclamationIcon className="h-6 w-6" />
-              </div>
-
-            </div>
-
-          </GlassPanel>
-
-        </div>
-
-        {/* Profile & Match Settings */}
-        <div className="grid gap-6 md:grid-cols-2">
-
-          {/* Matchmaking Preference */}
-          <GlassPanel className="rounded-3xl p-6">
-
-            <h3 className="mb-4 flex items-center gap-2 text-lg font-bold">
-
-              <Cog6ToothIcon className="h-5 w-5 text-indigo-400" />
-
-              Matchmaking Preference
-
-            </h3>
-
-            <div className="space-y-3">
-
-              <label className="block text-xs font-semibold text-zinc-300">
-                Looking For
-              </label>
-
-              <div className="grid grid-cols-3 gap-3">
-
-                {[
-                  {
-                    id: 'female',
-                    label: 'Female Only',
-                  },
-                  {
-                    id: 'male',
-                    label: 'Male Only',
-                  },
-                  {
-                    id: 'anyone',
-                    label: 'Anyone (Fastest)',
-                  },
-                ].map((item) => (
-
-                  <button
-                    key={item.id}
-                    className={`rounded-xl border py-3 text-xs font-semibold transition ${
-                      profile.looking_for === item.id
-                        ? 'border-indigo-500 bg-indigo-500/20 text-indigo-300'
-                        : 'border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10'
-                    }`}
-                    onClick={() =>
-                      handleUpdateLookingFor(item.id)
-                    }
-                  >
-                    {item.label}
-                  </button>
-
-                ))}
-
-              </div>
-
-              <p className="mt-2 text-[11px] text-zinc-400">
-                FastAPI WebSocket signaling engine uses your
-                preference to match online strangers.
-              </p>
-
-            </div>
-
-          </GlassPanel>
-
-          {/* Profile Card */}
-          <GlassPanel className="rounded-3xl p-6">
-
-            <div className="mb-4 flex items-center justify-between">
-
-              <h3 className="text-lg font-bold">
-                Your Profile
-              </h3>
-
+          {/* Section: Who do you want to meet? */}
+          <div className="mb-6">
+            <span className="text-[11px] font-bold tracking-wider text-gray-400 uppercase">
+              Who do you want to meet?
+            </span>
+
+            {/* 3 Selectable Options */}
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+              {/* Option 1: Female Only */}
               <button
-                className="flex items-center gap-1 text-xs text-indigo-400 hover:underline"
-                onClick={() =>
-                  setShowSetupModal(true)
-                }
+                type="button"
+                onClick={() => handleUpdateLookingFor('female')}
+                className={`flex flex-col items-center justify-center rounded-xl p-5 text-center transition cursor-pointer border ${
+                  selectedMode === 'female'
+                    ? 'border-2 border-indigo-600 bg-indigo-50/30 text-indigo-900 shadow-sm'
+                    : 'border-gray-200 bg-white hover:border-gray-300 text-gray-700'
+                }`}
               >
-
-                <PencilSquareIcon className="h-3.5 w-3.5" />
-
-                Edit Profile
-
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-pink-50 text-pink-500 mb-2">
+                  <span className="text-xl font-bold">♀</span>
+                </div>
+                <span className="font-semibold text-sm">Female Only</span>
+                <span className="mt-1.5 inline-block rounded-md bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700 border border-purple-100">
+                  {femaleCredits > 0 ? `${femaleCredits} credit available` : '1 credit available'}
+                </span>
               </button>
 
-            </div>
-
-            <div className="space-y-3 text-xs text-zinc-300">
-
-              {/* Name */}
-              <div className="flex justify-between border-b border-white/5 pb-2">
-
-                <span className="text-zinc-400">
-                  Name
-                </span>
-
-                <span className="font-semibold text-white">
-                  {displayName}
-                </span>
-
-              </div>
-
-              {/* Email */}
-              <div className="flex justify-between border-b border-white/5 pb-2">
-
-                <span className="text-zinc-400">
-                  Email
-                </span>
-
-                <span className="max-w-[65%] truncate font-semibold text-white">
-                  {displayEmail}
-                </span>
-
-              </div>
-
-              {/* Gender */}
-              <div className="flex justify-between border-b border-white/5 pb-2">
-
-                <span className="text-zinc-400">
-                  Gender
-                </span>
-
-                <span className="font-semibold capitalize text-white">
-                  {profile.gender}
-                </span>
-
-              </div>
-
-              {/* Age */}
-              <div className="flex justify-between border-b border-white/5 pb-2">
-
-                <span className="text-zinc-400">
-                  Age
-                </span>
-
-                <span className="font-semibold text-white">
-                  {profile.age}
-                </span>
-
-              </div>
-
-              {/* Country */}
-              <div className="flex justify-between border-b border-white/5 pb-2">
-
-                <span className="text-zinc-400">
-                  Country
-                </span>
-
-                <span className="font-semibold text-white">
-                  {profile.country}
-                </span>
-
-              </div>
-
-              {/* Languages */}
-              <div className="flex justify-between border-b border-white/5 pb-2">
-
-                <span className="text-zinc-400">
-                  Languages
-                </span>
-
-                <span className="font-semibold text-white">
-                  {profile.languages?.join(', ') || 'None'}
-                </span>
-
-              </div>
-
-              {/* Interests */}
-              <div className="flex justify-between">
-
-                <span className="text-zinc-400">
-                  Interests
-                </span>
-
-                <span className="font-semibold text-white">
-                  {profile.interests?.join(', ') || 'None'}
-                </span>
-
-              </div>
-
-            </div>
-
-          </GlassPanel>
-
-        </div>
-
-        {/* Random Test User Profiles & Omegle Testing Hub */}
-        <div className="mt-8">
-          <GlassPanel className="rounded-3xl p-6 border border-indigo-500/20 bg-gradient-to-b from-indigo-950/20 to-black/40">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-white/10 pb-4">
-              <div>
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-500/10 px-3 py-1 text-xs font-semibold text-indigo-300 border border-indigo-500/30">
-                  <span>👥</span> Active Test Profiles & Testing Hub
-                </span>
-                <h3 className="text-xl font-bold mt-2">Simulated Strangers for Testing</h3>
-                <p className="text-xs text-zinc-400">
-                  Use these simulated random user profiles to test Omegle-style video matching and chat without waiting.
-                </p>
-              </div>
-
-              <div className="flex gap-2">
-                <button
-                  className="rounded-xl border border-indigo-500/30 bg-indigo-600/20 px-4 py-2 text-xs font-semibold text-indigo-200 transition hover:bg-indigo-600/40"
-                  onClick={async () => {
-                    try {
-                      const res = await seedMockUsers()
-                      alert(res.message || 'Seeded mock users successfully!')
-                    } catch (err: any) {
-                      alert('Seeding status: ' + err.message)
-                    }
-                  }}
-                  type="button"
-                >
-                  🌱 Seed Test Profiles in DB
-                </button>
-
-                <button
-                  className="rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 px-4 py-2 text-xs font-bold text-white shadow-lg transition hover:scale-105"
-                  onClick={() => navigate('/waiting')}
-                  type="button"
-                >
-                  🚀 Test Video Call Now
-                </button>
-              </div>
-            </div>
-
-            {/* Test Profiles Cards */}
-            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {[
-                {
-                  name: 'Riya Sharma',
-                  gender: 'Female',
-                  age: 22,
-                  city: 'Mumbai, India',
-                  interests: ['Music', 'Travel', 'Photography'],
-                  image: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&auto=format&fit=crop&q=80',
-                  status: 'Active / Available',
-                },
-                {
-                  name: 'Aarav Patel',
-                  gender: 'Male',
-                  age: 24,
-                  city: 'Ahmedabad, India',
-                  interests: ['Tech', 'Gaming', 'Coding'],
-                  image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80',
-                  status: 'Active / Available',
-                },
-                {
-                  name: 'Sneha Verma',
-                  gender: 'Female',
-                  age: 21,
-                  city: 'Delhi, India',
-                  interests: ['Dancing', 'Art', 'Movies'],
-                  image: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80',
-                  status: 'Active / Available',
-                },
-                {
-                  name: 'Rohit Mehta',
-                  gender: 'Male',
-                  age: 25,
-                  city: 'Bengaluru, India',
-                  interests: ['Fitness', 'Startups', 'Cricket'],
-                  image: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&auto=format&fit=crop&q=80',
-                  status: 'Active / Available',
-                },
-                {
-                  name: 'Ananya Singh',
-                  gender: 'Female',
-                  age: 23,
-                  city: 'Pune, India',
-                  interests: ['Reading', 'Coffee', 'Anime'],
-                  image: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=400&auto=format&fit=crop&q=80',
-                  status: 'Active / Available',
-                },
-                {
-                  name: 'Alex Johnson',
-                  gender: 'Male',
-                  age: 26,
-                  city: 'New York, USA',
-                  interests: ['Design', 'Music', 'Vlogging'],
-                  image: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=400&auto=format&fit=crop&q=80',
-                  status: 'Active / Available',
-                },
-              ].map((userItem, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center gap-3.5 rounded-2xl border border-white/10 bg-white/[0.04] p-3.5 transition hover:border-indigo-500/40 hover:bg-white/[0.07]"
-                >
-                  <img
-                    alt={userItem.name}
-                    className="h-12 w-12 rounded-full object-cover border border-indigo-500/30"
-                    src={userItem.image}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-xs font-bold text-white truncate">{userItem.name}</h4>
-                      <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                    </div>
-                    <p className="text-[11px] text-zinc-400">{userItem.gender} • {userItem.age} yrs • {userItem.city}</p>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {userItem.interests.slice(0, 2).map((interest, i) => (
-                        <span key={i} className="rounded bg-white/10 px-1.5 py-0.5 text-[9px] text-zinc-300">
-                          {interest}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
+              {/* Option 2: Male Only */}
+              <button
+                type="button"
+                onClick={() => handleUpdateLookingFor('male')}
+                className={`flex flex-col items-center justify-center rounded-xl p-5 text-center transition cursor-pointer border ${
+                  selectedMode === 'male'
+                    ? 'border-2 border-indigo-600 bg-indigo-50/30 text-indigo-900 shadow-sm'
+                    : 'border-gray-200 bg-white hover:border-gray-300 text-gray-700'
+                }`}
+              >
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-blue-500 mb-2">
+                  <span className="text-xl font-bold">♂</span>
                 </div>
-              ))}
+                <span className="font-semibold text-sm">Male Only</span>
+                <span className="mt-1.5 text-[11px] text-gray-400">Free matching</span>
+              </button>
+
+              {/* Option 3: Anyone */}
+              <button
+                type="button"
+                onClick={() => handleUpdateLookingFor('anyone')}
+                className={`flex flex-col items-center justify-center rounded-xl p-5 text-center transition cursor-pointer border ${
+                  selectedMode === 'anyone'
+                    ? 'border-2 border-indigo-600 bg-indigo-50/30 text-indigo-900 shadow-sm'
+                    : 'border-gray-200 bg-white hover:border-gray-300 text-gray-700'
+                }`}
+              >
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-gray-600 mb-2">
+                  <UserGroupIcon className="h-5 w-5" />
+                </div>
+                <span className="font-semibold text-sm">Anyone</span>
+                <span className="mt-1.5 text-[11px] text-gray-400">Fastest queue</span>
+              </button>
             </div>
 
-            <div className="mt-4 rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-3 text-[11px] text-indigo-300 flex items-center gap-2">
-              <span>💡</span>
-              <span>
-                <strong>Testing Tip:</strong> Open 2 different browser tabs (or 1 normal tab + 1 Incognito tab), click <strong>Start Video Match</strong> in both tabs, and they will immediately connect to each other in real-time! Or use the <strong>Test with Bot</strong> mode when testing solo.
-              </span>
+            {/* Most Visually Prominent Primary Action Button */}
+            <button
+              onClick={handleStartVideoMatch}
+              disabled={rewardLoading}
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3.5 px-6 text-base font-bold text-white shadow-sm hover:bg-indigo-700 transition active:scale-[0.99] disabled:opacity-60 cursor-pointer"
+            >
+              <span>Start Video Match</span>
+              <ArrowRightIcon className="h-5 w-5" />
+            </button>
+          </div>
+
+          {/* Stats Row */}
+          <div className="mb-6 grid grid-cols-3 gap-3.5">
+            {/* Stat 1: Video Matches */}
+            <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+                <VideoCameraIcon className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-base sm:text-lg font-bold text-gray-900">{statsMatches}</p>
+                <p className="text-[11px] text-gray-500 font-medium">Video Matches</p>
+              </div>
             </div>
-          </GlassPanel>
+
+            {/* Stat 2: Friends */}
+            <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+                <UserGroupIcon className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-base sm:text-lg font-bold text-gray-900">{statsFriends}</p>
+                <p className="text-[11px] text-gray-500 font-medium">Friends</p>
+              </div>
+            </div>
+
+            {/* Stat 3: Blocked */}
+            <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-50 text-red-500">
+                <NoSymbolIcon className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-base sm:text-lg font-bold text-gray-900">{statsBlocked}</p>
+                <p className="text-[11px] text-gray-500 font-medium">Blocked</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Compact Profile Summary Card */}
+          <div className="mb-8">
+            <span className="text-[11px] font-bold tracking-wider text-gray-400 uppercase">
+              Your Profile
+            </span>
+            <div className="mt-2 flex items-center justify-between rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="flex items-center gap-3.5">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-indigo-600 text-base font-bold text-white shadow-sm overflow-hidden">
+                  {profile.image ? (
+                    <img src={profile.image} alt={displayName} className="h-full w-full object-cover" />
+                  ) : (
+                    <span>{userInitial}</span>
+                  )}
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-gray-900">{displayName}</h3>
+                  <p className="text-xs text-gray-500">
+                    {profile.gender ? profile.gender.charAt(0).toUpperCase() + profile.gender.slice(1) : 'Male'} · {profile.age || 21} · {profile.country || 'India'}
+                  </p>
+                </div>
+              </div>
+
+              <Link
+                to="/profile/edit"
+                className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition shadow-sm"
+              >
+                Edit Profile
+              </Link>
+            </div>
+          </div>
+
+          {/* Banner Advertisement */}
+          <BannerAd slotId="dashboard-page-bottom" />
         </div>
-
       </main>
 
+      {/* Female Rewarded Ad Modal */}
+      <FemaleRewardModal
+        isOpen={showRewardModal}
+        onClose={() => setShowRewardModal(false)}
+        onStartMatch={() => {
+          setShowRewardModal(false)
+          navigate('/waiting', { state: { autoStart: true } })
+        }}
+        rewardState={femaleRewardState}
+        onRewardVerified={(newState) => setFemaleRewardState(newState)}
+        completeRewardApi={handleCompleteRewardedAd}
+        userId={user?.id}
+        onSwitchToAnyone={() => handleUpdateLookingFor('anyone')}
+      />
 
-      {/* Onboarding Profile Modal */}
+      {/* Profile Setup Modal for first-time users */}
       {showSetupModal && (
         <ProfileSetupModal
           initialProfile={profile}
+          isOpen={showSetupModal}
+          onClose={() => setShowSetupModal(false)}
           onSuccess={(updated) => {
             setProfile(updated)
             setShowSetupModal(false)
@@ -699,7 +422,6 @@ export function DashboardPage() {
           token={token}
         />
       )}
-
     </div>
   )
 }

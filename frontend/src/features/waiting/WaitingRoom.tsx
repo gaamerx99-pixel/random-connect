@@ -1,59 +1,58 @@
-import { useEffect, useState } from 'react'
-import { motion } from 'framer-motion'
-import { useNavigate } from 'react-router-dom'
-import { useAuth } from '@clerk/clerk-react'
+import { useEffect, useRef, useState } from 'react'
+import { useLocation, useNavigate, Link } from 'react-router-dom'
+import { useAuth, useUser } from '@clerk/clerk-react'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   ArrowLeftIcon,
+  ClockIcon,
+  AdjustmentsHorizontalIcon,
+  ShieldExclamationIcon,
+  HandRaisedIcon,
+  VideoCameraIcon,
   CheckCircleIcon,
   ExclamationTriangleIcon,
-  InformationCircleIcon,
-  MicrophoneIcon,
-  ShieldExclamationIcon,
-  SignalIcon,
-  VideoCameraIcon,
-  HandRaisedIcon,
+  XMarkIcon,
+  UserGroupIcon,
 } from '@heroicons/react/24/outline'
 
-import { GlassPanel } from '../../components/ui/GlassPanel'
 import { useLocalMedia } from './useLocalMedia'
 import { useWebRtcSignaling } from './useWebRtcSignaling'
 import { ChatPanel } from './components/ChatPanel'
 import { ControlBar } from './components/ControlBar'
-import { StatusCard } from './components/StatusCard'
 import { VideoPreview } from './components/VideoPreview'
-import { blockUser, reportUser } from '../../services/api'
-
-function formatPermissionStatus(status: string) {
-  if (status === 'checking') {
-    return 'Checking'
-  }
-
-  return status
-    .split(/[\s-]/)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
-}
-
-function statusTone(status: string) {
-  if (status === 'granted' || status === 'ready' || status === 'connected') {
-    return 'good'
-  }
-
-  if (status === 'denied' || status === 'blocked' || status === 'unsupported' || status === 'failed') {
-    return 'warning'
-  }
-
-  return 'muted'
-}
+import { BannerAd } from '../../components/ads/BannerAd'
+import {
+  blockUser,
+  reportUser,
+  getMyProfile,
+  updateMyProfile,
+  getFemaleRewardState,
+  completeFemaleRewardedAd,
+  UserProfile,
+  FemaleRewardState,
+} from '../../services/api'
+import { FemaleRewardModal } from '../../components/rewards/FemaleRewardModal'
 
 export function WaitingRoom() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const hasAutoStartedRef = useRef(false)
   const { getToken } = useAuth()
+  const { user: clerkUser } = useUser()
+
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
+  const [femaleRewardState, setFemaleRewardState] = useState<FemaleRewardState | null>(null)
+  const [showRewardModal, setShowRewardModal] = useState(false)
+  const [rewardModalTitle, setRewardModalTitle] = useState<string | undefined>(undefined)
+  const [rewardModalSubtitle, setRewardModalSubtitle] = useState<string | undefined>(undefined)
+
   const [isChatOpen, setIsChatOpen] = useState(false)
-  const [showStatusDetails, setShowStatusDetails] = useState(false)
+  const [showDevicesDrawer, setShowDevicesDrawer] = useState(false)
   const [showReportModal, setShowReportModal] = useState(false)
   const [reportReason, setReportReason] = useState('Inappropriate Behavior')
   const [reportDetails, setReportDetails] = useState('')
+
+  const [callDuration, setCallDuration] = useState(0)
 
   const {
     cameraStatus,
@@ -67,6 +66,13 @@ export function WaitingRoom() {
     stream,
     toggleAudio,
     toggleVideo,
+    videoDevices,
+    audioDevices,
+    selectedVideoDeviceId,
+    selectedAudioDeviceId,
+    selectVideoDevice,
+    selectAudioDevice,
+    isAvatarVideoActive,
   } = useLocalMedia()
 
   const {
@@ -82,40 +88,118 @@ export function WaitingRoom() {
     skipStranger,
     searchSeconds,
     timeoutLimit,
-    setTimeoutLimit,
     isTimedOut,
     startTestMatch,
     isTestMode,
+    rewardRequired,
+    rewardRequiredMessage,
+    clearRewardRequired,
   } = useWebRtcSignaling(stream)
 
-  const [autoRetryCount, setAutoRetryCount] = useState(5)
+  // Fetch profile and reward state on load
+  useEffect(() => {
+    let isMounted = true
+    const loadProfile = async () => {
+      const token = (await getToken()) || null
+      if (!token) return
+      try {
+        const profile = await getMyProfile(token)
+        if (isMounted) setUserProfile(profile)
+        if (profile.gender?.toLowerCase() === 'male' && profile.looking_for === 'female') {
+          const reward = await getFemaleRewardState(token)
+          if (isMounted) setFemaleRewardState(reward)
+        }
+      } catch (err) {
+        console.warn('Failed to load profile in WaitingRoom:', err)
+      }
+    }
+    loadProfile()
+    return () => {
+      isMounted = false
+    }
+  }, [getToken])
 
-  // Auto-refresh search loop on timeout
+  // Auto-start match when navigated from Dashboard with autoStart: true
+  useEffect(() => {
+    if (
+      location.state?.autoStart &&
+      connectionStatus === 'ready' &&
+      signalingStatus === 'idle' &&
+      !isSearching &&
+      !hasAutoStartedRef.current
+    ) {
+      hasAutoStartedRef.current = true
+      findStranger()
+    }
+  }, [location.state, connectionStatus, signalingStatus, isSearching, findStranger])
+
+  // Track active call session
+  const isConnected = signalingStatus === 'connected' || signalingStatus === 'matched'
+
+  // Call duration counter
   useEffect(() => {
     let timer: any = null
-    if (isTimedOut && isSearching) {
-      setAutoRetryCount(5)
+    if (isConnected) {
       timer = setInterval(() => {
-        setAutoRetryCount((prev) => {
-          if (prev <= 1) {
-            clearInterval(timer)
-            findStranger()
-            return 5
-          }
-          return prev - 1
-        })
+        setCallDuration((prev) => prev + 1)
       }, 1000)
+    } else {
+      setCallDuration(0)
     }
     return () => {
       if (timer) clearInterval(timer)
     }
-  }, [isTimedOut, isSearching, findStranger])
+  }, [isConnected])
 
-  const canSearch = connectionStatus === 'ready'
-  const isConnected = signalingStatus === 'connected' || signalingStatus === 'matched'
-  const connectionLabel = signalingStatus === 'idle' ? connectionStatus : signalingStatus
+  const formatTimer = (secs: number) => {
+    const m = Math.floor(secs / 60)
+    const s = secs % 60
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+  }
 
-  const handleSkip = () => {
+  // Backend reward-required pop-up (if emitted by backend signaling)
+  useEffect(() => {
+    if (rewardRequired) {
+      setRewardModalTitle('Female Matching Locked')
+      setRewardModalSubtitle(
+        rewardRequiredMessage || 'Watch 1 rewarded ad to unlock 1 female connection.',
+      )
+      setShowRewardModal(true)
+    }
+  }, [rewardRequired, rewardRequiredMessage])
+
+  // Next Stranger / Skip action
+  const handleSkip = async () => {
+    const isMaleLookingForFemale =
+      userProfile?.gender?.toLowerCase() === 'male' &&
+      userProfile?.looking_for === 'female'
+
+    if (isMaleLookingForFemale) {
+      const token = (await getToken()) || null
+      let credits = femaleRewardState?.female_match_credits || 0
+      if (token) {
+        try {
+          const freshState = await getFemaleRewardState(token)
+          setFemaleRewardState(freshState)
+          credits = freshState.female_match_credits || 0
+        } catch (err) {
+          console.warn('Failed to refresh reward state on skip:', err)
+        }
+      }
+
+      if (credits <= 0) {
+        setRewardModalTitle('Female Matching Locked')
+        setRewardModalSubtitle('Watch 1 rewarded ad to unlock 1 female connection.')
+        setShowRewardModal(true)
+        return
+      }
+    }
+
+    if (isTestMode) {
+      startTestMatch()
+      return
+    }
+
     if (signalingStatus === 'idle') {
       findStranger()
     } else {
@@ -133,371 +217,379 @@ export function WaitingRoom() {
     try {
       const token = (await getToken()) || 'mock-dev-token'
       await blockUser(token, peerProfile.clerk_id)
-      alert('User blocked successfully. Moving to next stranger...')
       skipStranger()
-    } catch (err: any) {
-      alert(`Block failed: ${err.message}`)
+    } catch (err) {
+      console.error('Failed to block user:', err)
     }
   }
 
-  const handleReportUserSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleReportUser = async () => {
     if (!peerProfile?.clerk_id) return
     try {
       const token = (await getToken()) || 'mock-dev-token'
       await reportUser(token, peerProfile.clerk_id, reportReason, reportDetails)
-      alert('Report submitted. Thank you for keeping RandomConnect safe.')
       setShowReportModal(false)
+      setReportDetails('')
       skipStranger()
-    } catch (err: any) {
-      alert(`Report failed: ${err.message}`)
+    } catch (err) {
+      console.error('Failed to report user:', err)
     }
   }
 
+  const displayName =
+    clerkUser?.fullName ||
+    [clerkUser?.firstName, clerkUser?.lastName].filter(Boolean).join(' ') ||
+    userProfile?.name ||
+    'Shivam'
+
+  const userInitial = (displayName.charAt(0) || 'S').toUpperCase()
+
   return (
-    <main className="relative flex min-h-screen flex-col overflow-hidden bg-[#07080d] text-white">
-      {/* Background Gradients */}
-      <div className="absolute inset-0 bg-[linear-gradient(180deg,#07080d_0%,#101014_54%,#07080d_100%)]" />
-      <div className="absolute inset-0 opacity-30 [background-image:linear-gradient(rgba(255,255,255,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.045)_1px,transparent_1px)] [background-size:72px_72px]" />
-
-      <div className="relative flex flex-1 flex-col px-3 py-4 sm:px-6 lg:px-8">
-        {/* Navigation Bar */}
-        <nav className="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <div className="flex min-h-screen flex-col bg-[#fafbfc] text-gray-900">
+      {/* 1. Clean Header (Screen 3) */}
+      <header className="sticky top-0 z-40 w-full border-b border-gray-200 bg-white shadow-sm">
+        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-3 sm:px-6">
+          {/* Left: Logo & Back Button */}
           <div className="flex items-center gap-3">
-            <button
-              className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-semibold text-white backdrop-blur-xl transition hover:bg-white/[0.1]"
-              onClick={handleLeave}
-              type="button"
+            <Link
+              to="/"
+              className="flex items-center gap-2 text-gray-900 font-bold group cursor-pointer"
+              aria-label="RandomConnect Home"
+              title="RandomConnect Home"
             >
-              <ArrowLeftIcon className="h-4 w-4" />
-              <span className="hidden sm:inline">Dashboard</span>
-            </button>
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-sm transition group-hover:bg-indigo-700">
+                <VideoCameraIcon className="h-4 w-4" />
+              </div>
+              <span className="hidden sm:inline text-base">
+                Random<span className="text-indigo-600">Connect</span>
+              </span>
+            </Link>
 
-            {/* Timeout Selector (30s / 60s) */}
-            <div className="flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-1 text-xs text-zinc-400">
-              <span className="px-2 font-medium">Timeout:</span>
-              <button
-                className={`rounded-full px-2.5 py-1 font-semibold transition ${
-                  timeoutLimit === 30 ? 'bg-indigo-600 text-white shadow-sm' : 'hover:text-white'
-                }`}
-                onClick={() => setTimeoutLimit(30)}
-                type="button"
-              >
-                30s
-              </button>
-              <button
-                className={`rounded-full px-2.5 py-1 font-semibold transition ${
-                  timeoutLimit === 60 ? 'bg-indigo-600 text-white shadow-sm' : 'hover:text-white'
-                }`}
-                onClick={() => setTimeoutLimit(60)}
-                type="button"
-              >
-                60s
-              </button>
-            </div>
+            <button
+              onClick={handleLeave}
+              className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition shadow-sm cursor-pointer"
+            >
+              <ArrowLeftIcon className="h-3.5 w-3.5" />
+              <span>Dashboard</span>
+            </button>
           </div>
 
-          {/* Connection Status & Peer Info */}
-          <div className="flex flex-wrap items-center gap-2">
+          {/* Center: Connection Status & Timer */}
+          <div className="flex items-center gap-2.5">
+            {/* Status Pill */}
+            <div className="flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-medium text-gray-700">
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  isConnected
+                    ? 'bg-emerald-500 animate-pulse'
+                    : isSearching
+                    ? 'bg-amber-400 animate-ping'
+                    : 'bg-gray-400'
+                }`}
+              />
+              <span>
+                {isTestMode
+                  ? 'Connected (Bot)'
+                  : isSearching
+                  ? `Searching (${Math.max(0, timeoutLimit - searchSeconds)}s)`
+                  : isConnected
+                  ? 'Connected'
+                  : 'Ready'}
+              </span>
+            </div>
+
+            {/* Test Mode Badge */}
             {isTestMode && (
-              <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-300 animate-pulse">
-                ⚡ Test Mode (Simulated User)
+              <span className="hidden sm:inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700">
+                ⚡ Test Bot
               </span>
             )}
 
+            {/* Call Timer Pill */}
+            <div className="flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-semibold text-gray-700 font-mono">
+              <ClockIcon className="h-3.5 w-3.5 text-gray-400" />
+              <span>{formatTimer(callDuration)}</span>
+            </div>
+
+            {/* Connected Peer Details Pill */}
             {isConnected && peerProfile && (
-              <div className="hidden sm:flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-4 py-1.5 text-xs text-indigo-200">
-                <span className="font-semibold text-white">{peerProfile.name}</span>
-                <span>• {peerProfile.gender} ({peerProfile.age})</span>
+              <div className="hidden lg:flex items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-xs text-indigo-900 font-medium">
+                <span className="font-bold">{peerProfile.name}</span>
                 <span>• {peerProfile.country}</span>
               </div>
             )}
+          </div>
 
-            <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-xs font-medium sm:text-sm text-zinc-300 backdrop-blur-xl">
-              <span
-                className={`h-2.5 w-2.5 rounded-full ${
-                  isConnected
-                    ? 'bg-emerald-400 animate-pulse'
-                    : isSearching
-                    ? 'bg-amber-400 animate-ping'
-                    : 'bg-zinc-400'
-                }`}
-              />
-              <span className="capitalize">
-                {isSearching
-                  ? `Searching (${Math.max(0, timeoutLimit - searchSeconds)}s)`
-                  : isConnected
-                  ? 'Connected to Stranger'
-                  : connectionLabel}
-              </span>
-            </div>
-
-            {/* Instant Test Mode button */}
-            {!isConnected && (
-              <button
-                className="flex items-center gap-1.5 rounded-full border border-indigo-500/40 bg-indigo-600/20 px-3 py-2 text-xs font-medium text-indigo-200 backdrop-blur-xl hover:bg-indigo-600/30"
-                onClick={startTestMatch}
-                title="Connect with a simulated test bot stranger"
-                type="button"
-              >
-                <span>🤖</span>
-                <span>Test With Bot</span>
-              </button>
-            )}
+          {/* Right: Actions (Test With Bot, Safety & Devices) */}
+          <div className="flex items-center gap-2">
+            {/* Test With Bot secondary testing button */}
+            <button
+              onClick={startTestMatch}
+              type="button"
+              className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 hover:text-gray-900 transition shadow-sm cursor-pointer"
+              title="Connect with a simulated test bot stranger"
+            >
+              <span aria-hidden="true">🤖</span>
+              <span>Test With Bot</span>
+            </button>
 
             {isConnected && (
               <>
                 <button
-                  className="flex items-center gap-1 rounded-full border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300 hover:bg-red-500/20"
                   onClick={() => setShowReportModal(true)}
-                  title="Report Stranger"
+                  className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-gray-50 transition cursor-pointer"
+                  title="Report user"
                 >
                   <ShieldExclamationIcon className="h-4 w-4" />
-                  <span className="hidden md:inline">Report</span>
                 </button>
                 <button
-                  className="flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300 hover:bg-amber-500/20"
                   onClick={handleBlockUser}
-                  title="Block Stranger"
+                  className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-gray-50 transition cursor-pointer"
+                  title="Block user"
                 >
                   <HandRaisedIcon className="h-4 w-4" />
-                  <span className="hidden md:inline">Block</span>
                 </button>
               </>
             )}
 
             <button
-              className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.06] px-3 py-2 text-xs text-zinc-300 backdrop-blur-xl hover:bg-white/10"
-              onClick={() => setShowStatusDetails((prev) => !prev)}
-              title="Toggle device details"
-              type="button"
+              onClick={() => setShowDevicesDrawer(!showDevicesDrawer)}
+              className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition shadow-sm cursor-pointer"
             >
-              <InformationCircleIcon className="h-4 w-4 text-emerald-300" />
-              <span className="hidden md:inline">Devices</span>
+              <AdjustmentsHorizontalIcon className="h-4 w-4 text-indigo-600" />
+              <span className="hidden sm:inline">Devices</span>
             </button>
           </div>
-        </nav>
+        </div>
+      </header>
 
-        {/* Device Status Info Drawer (Collapsible) */}
-        {showStatusDetails && (
-          <motion.div
-            animate={{ opacity: 1, height: 'auto' }}
-            className="mb-4 overflow-hidden"
-            initial={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.3 }}
-          >
-            <GlassPanel className="rounded-2xl p-4">
-              <div className="grid gap-3 sm:grid-cols-3">
-                <StatusCard
-                  description="Camera access for local video."
-                  icon={cameraStatus === 'granted' ? CheckCircleIcon : VideoCameraIcon}
-                  label="Camera"
-                  tone={statusTone(cameraStatus)}
-                  value={formatPermissionStatus(cameraStatus)}
-                />
-                <StatusCard
-                  description="Microphone access for audio call."
-                  icon={microphoneStatus === 'granted' ? CheckCircleIcon : MicrophoneIcon}
-                  label="Microphone"
-                  tone={statusTone(microphoneStatus)}
-                  value={formatPermissionStatus(microphoneStatus)}
-                />
-                <StatusCard
-                  description="WebRTC signaling status."
-                  icon={connectionLabel === 'blocked' || connectionLabel === 'failed' ? ExclamationTriangleIcon : SignalIcon}
-                  label="Signaling"
-                  tone={statusTone(connectionLabel)}
-                  value={formatPermissionStatus(connectionLabel)}
-                />
-              </div>
-              {!canSearch && (
-                <button
-                  className="mt-3 w-full rounded-xl bg-white/10 py-2 text-xs font-semibold text-white hover:bg-white/15"
-                  disabled={isRequesting}
-                  onClick={requestMedia}
-                  type="button"
+      {/* 2. Devices Configuration Drawer (Collapsible) */}
+      {showDevicesDrawer && (
+        <div className="border-b border-gray-200 bg-white px-4 py-4 shadow-sm">
+          <div className="mx-auto max-w-4xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-xs">
+            <div className="flex items-center gap-4 flex-wrap">
+              <div>
+                <label className="block text-gray-500 font-medium mb-1">Camera Device</label>
+                <select
+                  value={selectedVideoDeviceId}
+                  onChange={(e) => void selectVideoDevice(e.target.value)}
+                  className="rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-xs text-gray-800 focus:border-indigo-600 focus:outline-none"
                 >
-                  {isRequesting ? 'Requesting Permissions...' : 'Grant Camera & Mic Access'}
-                </button>
-              )}
-            </GlassPanel>
-          </motion.div>
-        )}
-
-        {/* Error Alert Banner */}
-        {(errorMessage || signalingErrorMessage) && (
-          <div className="mb-4 rounded-2xl border border-amber-300/20 bg-amber-300/[0.08] p-3 text-xs leading-5 text-amber-100 sm:text-sm">
-            {errorMessage || signalingErrorMessage}
-          </div>
-        )}
-
-        {/* MAIN VIDEO WORKSPACE & RESPONSIVE GRID */}
-        <div className="relative flex flex-1 flex-col gap-4 lg:flex-row">
-          <div className="relative flex flex-1 flex-col justify-between overflow-hidden rounded-[2.5rem] border border-white/10 bg-black/40 p-2 backdrop-blur-xl sm:p-4">
-            <div
-              className={`grid flex-1 gap-3 sm:gap-4 ${
-                isChatOpen ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 md:grid-cols-2'
-              } min-h-[55vh] sm:min-h-[62vh] lg:min-h-[68vh]`}
-            >
-              {/* Local User Video */}
-              <div className="relative flex flex-1 flex-col overflow-hidden">
-                <VideoPreview
-                  isAudioMuted={isAudioMuted}
-                  isVideoMuted={isVideoMuted}
-                  label="You (Local)"
-                  muted={true}
-                  stream={stream}
-                />
+                  {videoDevices.length > 0 ? (
+                    videoDevices.map((d, i) => (
+                      <option key={d.deviceId || i} value={d.deviceId}>
+                        {d.label || `Camera ${i + 1}`}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">No physical camera (Avatar Mode active)</option>
+                  )}
+                </select>
               </div>
 
-              {/* Stranger Remote Video */}
-              <div className="relative flex flex-1 flex-col overflow-hidden">
-                <VideoPreview
-                  emptyDescription={
-                    isSearching
-                      ? `Searching for an active user matching your preference... (${Math.max(0, timeoutLimit - searchSeconds)}s remaining)`
-                      : 'Click "Find Match" or "Next Stranger" to start video matching.'
-                  }
-                  emptyTitle={isSearching ? 'Matchmaking in progress' : 'No active stranger connection'}
-                  label={
-                    peerProfile
-                      ? `Stranger (${peerProfile.name}, ${peerProfile.country || 'India'})${isTestMode ? ' [BOT]' : ''}`
-                      : 'Stranger (Remote)'
-                  }
-                  muted={false}
-                  stream={remoteStream}
-                />
+              <div>
+                <label className="block text-gray-500 font-medium mb-1">Microphone Device</label>
+                <select
+                  value={selectedAudioDeviceId}
+                  onChange={(e) => void selectAudioDevice(e.target.value)}
+                  className="rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-xs text-gray-800 focus:border-indigo-600 focus:outline-none"
+                >
+                  {audioDevices.map((d, i) => (
+                    <option key={d.deviceId || i} value={d.deviceId}>
+                      {d.label || `Microphone ${i + 1}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
-                {/* TIMEOUT & AUTO-REFRESH OVERLAY */}
-                {isSearching && isTimedOut && (
-                  <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/85 p-6 text-center backdrop-blur-md">
-                    <div className="rounded-full bg-amber-500/20 p-3 text-amber-300 mb-3 animate-pulse">
-                      <ExclamationTriangleIcon className="h-8 w-8" />
-                    </div>
-                    <h3 className="text-lg font-bold text-white mb-1">No Active Stranger Found Yet</h3>
-                    <p className="text-xs text-zinc-300 max-w-sm mb-4">
-                      No other user is currently free in the queue for the selected {timeoutLimit}s window.
-                    </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={requestMedia}
+                disabled={isRequesting}
+                className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 shadow-sm transition"
+              >
+                {isRequesting ? 'Checking Devices...' : 'Re-check Devices'}
+              </button>
+              <button
+                onClick={() => setShowDevicesDrawer(false)}
+                className="rounded-lg p-1.5 text-gray-400 hover:text-gray-600"
+              >
+                <XMarkIcon className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-                    <div className="mb-4 text-xs font-semibold text-indigo-300 bg-indigo-500/10 border border-indigo-500/20 px-3 py-1.5 rounded-full">
-                      Auto-retrying in {autoRetryCount}s...
-                    </div>
+      {/* 3. Small Banner Advertisement (Placed neatly ABOVE the video area as requested) */}
+      <div className="px-4 py-2">
+        <BannerAd slotId="waiting-top-banner" className="my-2 max-w-4xl" />
+      </div>
 
-                    <div className="flex flex-wrap justify-center gap-3">
-                      <button
-                        className="rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg transition hover:bg-indigo-500 active:scale-95"
-                        onClick={findStranger}
-                        type="button"
-                      >
-                        🔄 Rejoin / Retry Now
-                      </button>
-                      <button
-                        className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-xs font-semibold text-zinc-200 transition hover:bg-white/20 active:scale-95"
-                        onClick={startTestMatch}
-                        type="button"
-                      >
-                        🤖 Test with Simulated User
-                      </button>
-                    </div>
-                  </div>
+      {/* 4. Main Video Area (Screen 3) */}
+      <main className="flex-1 flex flex-col justify-center px-4 pb-4">
+        <div className="mx-auto grid w-full max-w-5xl flex-1 grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
+          {/* Left Panel: You (Shivam) */}
+          <VideoPreview
+            label={`You (${displayName})`}
+            userInitial={userInitial}
+            isAvatarMode={isAvatarVideoActive}
+            stream={stream}
+            isAudioMuted={isAudioMuted}
+            isVideoMuted={isVideoMuted}
+            muted={true}
+          />
+
+          {/* Right Panel: Stranger */}
+          {isConnected && remoteStream ? (
+            <VideoPreview
+              label={peerProfile?.name ? `${peerProfile.name}${isTestMode ? ' [BOT]' : ''}` : isTestMode ? 'Stranger [BOT]' : 'Stranger'}
+              userInitial={peerProfile?.name ? peerProfile.name.charAt(0).toUpperCase() : 'S'}
+              stream={remoteStream}
+              muted={false}
+            />
+          ) : (
+            <div className="relative flex h-full min-h-[300px] sm:min-h-[380px] w-full flex-1 items-center justify-center overflow-hidden rounded-2xl border border-gray-800 bg-[#141520] shadow-sm text-center p-6 text-white">
+              {/* Top Label */}
+              <div className="absolute left-4 top-4 z-10">
+                <span className="rounded-md bg-black/60 px-2.5 py-1 text-xs font-medium text-white backdrop-blur-sm border border-white/10">
+                  Stranger
+                </span>
+              </div>
+
+              {/* Central Searching State */}
+              <div className="flex flex-col items-center justify-center max-w-xs">
+                <div className="relative mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-gray-800/80 text-gray-400 border border-gray-700">
+                  <span className="text-3xl font-light">👤</span>
+                  {isSearching && (
+                    <span className="absolute inset-0 rounded-full border-2 border-indigo-500 animate-ping opacity-30" />
+                  )}
+                </div>
+
+                <p className="text-sm font-bold text-gray-100">
+                  {isSearching ? 'Looking for someone new...' : 'Waiting to connect'}
+                </p>
+                <p className="mt-1 text-xs text-gray-400">
+                  {isSearching
+                    ? 'Connecting to online users in the queue...'
+                    : 'Click Next Stranger below to begin video matching.'}
+                </p>
+
+                {/* Instant Bot Test Button for developer convenience */}
+                {!isSearching && (
+                  <button
+                    onClick={startTestMatch}
+                    className="mt-4 rounded-lg bg-white/10 border border-white/15 px-3 py-1.5 text-xs font-medium text-gray-200 hover:bg-white/15 transition"
+                  >
+                    🤖 Test With Bot
+                  </button>
                 )}
               </div>
             </div>
-
-
-            {/* FLOATING ACTION CONTROL BAR */}
-            <div className="sticky bottom-2 z-30 mt-4 flex items-center justify-center sm:bottom-4">
-              <GlassPanel className="rounded-full border border-white/15 px-3 py-2 shadow-2xl backdrop-blur-2xl sm:px-6 sm:py-3">
-                <ControlBar
-                  isAudioMuted={isAudioMuted}
-                  isChatOpen={isChatOpen}
-                  isConnected={isConnected}
-                  isSearching={isSearching}
-                  isVideoMuted={isVideoMuted}
-                  onLeave={handleLeave}
-                  onSkip={handleSkip}
-                  onToggleAudio={toggleAudio}
-                  onToggleChat={() => setIsChatOpen((prev) => !prev)}
-                  onToggleVideo={toggleVideo}
-                  unreadCount={chatMessages.length}
-                />
-              </GlassPanel>
-            </div>
-          </div>
-
-          {/* RESPONSIVE TEXT CHAT DRAWER */}
-          {isChatOpen && (
-            <motion.div
-              animate={{ opacity: 1, scale: 1 }}
-              className="w-full lg:w-[380px] xl:w-[420px] shrink-0"
-              initial={{ opacity: 0, scale: 0.95 }}
-              transition={{ duration: 0.25 }}
-            >
-              <ChatPanel
-                isConnected={isConnected}
-                messages={chatMessages}
-                onClose={() => setIsChatOpen(false)}
-                onSendMessage={sendChatMessage}
-              />
-            </motion.div>
           )}
         </div>
-      </div>
 
-      {/* REPORT USER MODAL */}
+        {/* 5. Bottom Controls Dock (Screen 3) */}
+        <div className="mt-4 mx-auto w-full max-w-xl">
+          <ControlBar
+            isAudioMuted={isAudioMuted}
+            isChatOpen={isChatOpen}
+            isConnected={isConnected}
+            isSearching={isSearching}
+            isVideoMuted={isVideoMuted}
+            onLeave={handleLeave}
+            onSkip={handleSkip}
+            onToggleAudio={toggleAudio}
+            onToggleChat={() => setIsChatOpen(!isChatOpen)}
+            onToggleVideo={toggleVideo}
+            unreadCount={0}
+          />
+        </div>
+      </main>
+
+      {/* Slide-out Chat Panel */}
+      <ChatPanel
+        isOpen={isChatOpen}
+        messages={chatMessages}
+        onClose={() => setIsChatOpen(false)}
+        onSendMessage={sendChatMessage}
+        peerName={peerProfile?.name || 'Stranger'}
+      />
+
+      {/* Report Modal */}
       {showReportModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md">
-          <GlassPanel className="w-full max-w-md p-6 rounded-3xl">
-            <h3 className="text-xl font-bold text-red-400 mb-2">Report Stranger</h3>
-            <p className="text-xs text-zinc-400 mb-4">
-              Select the reason for reporting this user. Violations will be reviewed by admin.
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+          <div className="relative w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-xl">
+            <h3 className="text-base font-bold text-gray-900">Report User</h3>
+            <p className="mt-1 text-xs text-gray-500">
+              Please tell us why you are reporting this user. Reports are reviewed by moderators.
             </p>
 
-            <form className="space-y-4 text-xs" onSubmit={handleReportUserSubmit}>
+            <div className="mt-4 space-y-3">
               <div>
-                <label className="block text-zinc-300 mb-1 font-medium">Reason</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Reason</label>
                 <select
-                  className="w-full rounded-xl border border-white/10 bg-zinc-900 px-3 py-2 text-white outline-none"
-                  onChange={(e) => setReportReason(e.target.value)}
                   value={reportReason}
+                  onChange={(e) => setReportReason(e.target.value)}
+                  className="w-full rounded-lg border border-gray-200 p-2 text-xs text-gray-800"
                 >
-                  <option value="Nudity / Inappropriate Content">Nudity / Explicit Content</option>
-                  <option value="Harassment / Hate Speech">Harassment / Hate Speech</option>
-                  <option value="Spam / Bot">Spam / Bot</option>
-                  <option value="Underage User">Underage User (&lt; 18)</option>
+                  <option value="Inappropriate Behavior">Inappropriate Behavior</option>
+                  <option value="Harassment or Hate Speech">Harassment or Hate Speech</option>
+                  <option value="Spam or Advertising">Spam or Advertising</option>
+                  <option value="Underage User">Underage User</option>
                   <option value="Other">Other</option>
                 </select>
               </div>
 
               <div>
-                <label className="block text-zinc-300 mb-1 font-medium">Additional Details (Optional)</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Details (optional)</label>
                 <textarea
-                  className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white outline-none"
+                  value={reportDetails}
                   onChange={(e) => setReportDetails(e.target.value)}
                   rows={3}
-                  value={reportDetails}
+                  className="w-full rounded-lg border border-gray-200 p-2 text-xs text-gray-800"
+                  placeholder="Describe what happened..."
                 />
               </div>
+            </div>
 
-              <div className="flex gap-2">
-                <button
-                  className="flex-1 rounded-xl bg-white/10 py-2.5 font-semibold text-white hover:bg-white/15"
-                  onClick={() => setShowReportModal(false)}
-                  type="button"
-                >
-                  Cancel
-                </button>
-                <button
-                  className="flex-1 rounded-xl bg-red-600 py-2.5 font-semibold text-white hover:bg-red-500"
-                  type="submit"
-                >
-                  Submit & Skip
-                </button>
-              </div>
-            </form>
-          </GlassPanel>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setShowReportModal(false)}
+                className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReportUser}
+                className="rounded-lg bg-red-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
+              >
+                Submit Report
+              </button>
+            </div>
+          </div>
         </div>
       )}
-    </main>
+
+      {/* Female Rewarded Ad Modal */}
+      <FemaleRewardModal
+        isOpen={showRewardModal}
+        onClose={() => setShowRewardModal(false)}
+        onStartMatch={() => {
+          setShowRewardModal(false)
+          findStranger()
+        }}
+        rewardState={femaleRewardState}
+        onRewardVerified={(newState) => setFemaleRewardState(newState)}
+        completeRewardApi={async (provider, rewardEventId) => {
+          const token = (await getToken()) || 'mock-dev-token'
+          return completeFemaleRewardedAd(token, provider, rewardEventId)
+        }}
+        userId={clerkUser?.id}
+        title={rewardModalTitle}
+        subtitle={rewardModalSubtitle}
+      />
+    </div>
   )
 }

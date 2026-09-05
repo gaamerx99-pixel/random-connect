@@ -2,7 +2,7 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react'
 
 import { cn } from '../../utils/cn'
 
-type ButtonVariant = 'primary' | 'secondary' | 'ghost'
+type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   children: ReactNode
@@ -11,17 +11,18 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 const variants: Record<ButtonVariant, string> = {
   primary:
-    'bg-white text-[#08090f] shadow-[0_18px_60px_rgba(255,255,255,0.16)] hover:bg-zinc-100',
+    'bg-indigo-600 text-white shadow-sm hover:bg-indigo-700 active:scale-[0.99] focus:ring-indigo-500',
   secondary:
-    'border border-white/15 bg-white/[0.08] text-white shadow-[0_18px_60px_rgba(0,0,0,0.24)] hover:bg-white/[0.12]',
-  ghost: 'text-zinc-300 hover:bg-white/[0.08] hover:text-white',
+    'border border-gray-200 bg-white text-gray-700 shadow-sm hover:bg-gray-50 active:scale-[0.99] focus:ring-gray-300',
+  ghost: 'text-gray-600 hover:bg-gray-100 hover:text-gray-900',
+  danger: 'bg-red-600 text-white shadow-sm hover:bg-red-700 active:scale-[0.99] focus:ring-red-500',
 }
 
 export function Button({ children, className, variant = 'primary', type = 'button', ...props }: ButtonProps) {
   return (
     <button
       className={cn(
-        'inline-flex min-h-12 items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold transition duration-200 focus:outline-none focus:ring-2 focus:ring-white/40 focus:ring-offset-2 focus:ring-offset-[#07080d] disabled:cursor-not-allowed disabled:opacity-60',
+        'inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-5 text-sm font-semibold transition duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60',
         variants[variant],
         className,
       )}

@@ -8,6 +8,17 @@ CLERK_SECRET_KEY = os.getenv("CLERK_SECRET_KEY", "")
 CLERK_PEM_PUBLIC_KEY = os.getenv("CLERK_PEM_PUBLIC_KEY", "")
 CLERK_PUBLISHABLE_KEY = os.getenv("CLERK_PUBLISHABLE_KEY", "")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "RS256")
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development").lower()
+REWARDED_AD_PROVIDER = os.getenv("REWARDED_AD_PROVIDER", "").strip().lower()
+REWARDED_ADS_TEST_MODE = (
+    os.getenv(
+        "REWARDED_ADS_TEST_MODE",
+        "true" if ENVIRONMENT != "production" else "false",
+    )
+    .strip()
+    .lower()
+    in {"1", "true", "yes", "on"}
+)
 
 CORS_ORIGINS = [
     "http://localhost:5173",

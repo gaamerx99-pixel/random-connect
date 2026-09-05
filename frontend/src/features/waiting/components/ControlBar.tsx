@@ -1,10 +1,10 @@
 import {
-  ArrowPathIcon,
   ChatBubbleLeftRightIcon,
   MicrophoneIcon,
   PhoneXMarkIcon,
   VideoCameraIcon,
   VideoCameraSlashIcon,
+  ForwardIcon,
 } from '@heroicons/react/24/outline'
 
 type ControlBarProps = {
@@ -35,84 +35,101 @@ export function ControlBar({
   unreadCount = 0,
 }: ControlBarProps) {
   return (
-    <div className="flex items-center justify-center gap-2 sm:gap-3">
-      {/* Mute Audio button */}
-      <button
-        className={`flex h-12 w-12 items-center justify-center rounded-2xl border backdrop-blur-xl transition-all sm:h-14 sm:w-14 ${
-          isAudioMuted
-            ? 'border-red-500/30 bg-red-500/20 text-red-300 hover:bg-red-500/30'
-            : 'border-white/10 bg-white/10 text-white hover:bg-white/15'
-        }`}
-        onClick={onToggleAudio}
-        title={isAudioMuted ? 'Unmute microphone' : 'Mute microphone'}
-        type="button"
-      >
-        <div className="relative flex items-center justify-center">
-          <MicrophoneIcon className="h-5 w-5 sm:h-6 sm:w-6" />
-          {isAudioMuted && (
-            <span className="absolute h-[2.5px] w-6 sm:w-7 rotate-[42deg] rounded-full bg-red-300 shadow-sm" />
+    <div className="flex items-center justify-center gap-3 sm:gap-6 py-2">
+      {/* 1. Mic Control */}
+      <div className="flex flex-col items-center gap-1">
+        <button
+          onClick={onToggleAudio}
+          className={`flex h-12 w-12 sm:h-13 sm:w-13 items-center justify-center rounded-full border shadow-sm transition active:scale-95 cursor-pointer ${
+            isAudioMuted
+              ? 'border-red-200 bg-red-50 text-red-500'
+              : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+          }`}
+          title={isAudioMuted ? 'Unmute microphone' : 'Mute microphone'}
+          aria-label={isAudioMuted ? 'Unmute microphone' : 'Mute microphone'}
+          type="button"
+        >
+          <MicrophoneIcon className="h-5 w-5" />
+        </button>
+        <span className="text-[11px] font-medium text-gray-500">Mic</span>
+      </div>
+
+      {/* 2. Camera Control */}
+      <div className="flex flex-col items-center gap-1">
+        <button
+          onClick={onToggleVideo}
+          className={`flex h-12 w-12 sm:h-13 sm:w-13 items-center justify-center rounded-full border shadow-sm transition active:scale-95 cursor-pointer ${
+            isVideoMuted
+              ? 'border-red-200 bg-red-50 text-red-500'
+              : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+          }`}
+          title={isVideoMuted ? 'Turn camera on' : 'Turn camera off'}
+          aria-label={isVideoMuted ? 'Turn camera on' : 'Turn camera off'}
+          type="button"
+        >
+          {isVideoMuted ? (
+            <VideoCameraSlashIcon className="h-5 w-5" />
+          ) : (
+            <VideoCameraIcon className="h-5 w-5" />
           )}
-        </div>
-      </button>
+        </button>
+        <span className="text-[11px] font-medium text-gray-500">Camera</span>
+      </div>
 
-      {/* Toggle Video button */}
-      <button
-        className={`flex h-12 w-12 items-center justify-center rounded-2xl border backdrop-blur-xl transition-all sm:h-14 sm:w-14 ${
-          isVideoMuted
-            ? 'border-red-500/30 bg-red-500/20 text-red-300 hover:bg-red-500/30'
-            : 'border-white/10 bg-white/10 text-white hover:bg-white/15'
-        }`}
-        onClick={onToggleVideo}
-        title={isVideoMuted ? 'Turn camera on' : 'Turn camera off'}
-        type="button"
-      >
-        {isVideoMuted ? (
-          <VideoCameraSlashIcon className="h-5 w-5 sm:h-6 sm:w-6" />
-        ) : (
-          <VideoCameraIcon className="h-5 w-5 sm:h-6 sm:w-6" />
-        )}
-      </button>
-
-      {/* Skip / Next Stranger button */}
-      <button
-        className="flex min-h-12 items-center gap-2 rounded-2xl border border-emerald-500/30 bg-emerald-500/20 px-5 font-semibold text-emerald-300 shadow-[0_0_25px_rgba(16,185,129,0.25)] backdrop-blur-xl transition-all hover:bg-emerald-500/30 active:scale-95 sm:min-h-14 sm:px-7 sm:text-base"
-        disabled={isSearching}
-        onClick={onSkip}
-        title="Skip to next stranger"
-        type="button"
-      >
-        <ArrowPathIcon className={`h-5 w-5 ${isSearching ? 'animate-spin' : ''}`} />
-        <span>{isSearching ? 'Searching...' : isConnected ? 'Next Stranger' : 'Find Match'}</span>
-      </button>
-
-      {/* Chat panel toggle button */}
-      <button
-        className={`relative flex h-12 w-12 items-center justify-center rounded-2xl border backdrop-blur-xl transition-all sm:h-14 sm:w-14 ${
-          isChatOpen
-            ? 'border-amber-400/40 bg-amber-400/20 text-amber-300'
-            : 'border-white/10 bg-white/10 text-white hover:bg-white/15'
-        }`}
-        onClick={onToggleChat}
-        title="Toggle text chat"
-        type="button"
-      >
-        <ChatBubbleLeftRightIcon className="h-5 w-5 sm:h-6 sm:w-6" />
-        {unreadCount > 0 && !isChatOpen && (
-          <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-400 text-[11px] font-bold text-zinc-950">
-            {unreadCount}
+      {/* 3. Next Stranger (Central prominent purple button) */}
+      <div className="flex flex-col items-center gap-1">
+        <button
+          onClick={onSkip}
+          disabled={isSearching}
+          className="flex h-12 sm:h-13 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 sm:px-8 font-bold text-white shadow-sm hover:bg-indigo-700 transition active:scale-95 disabled:opacity-60 cursor-pointer"
+          title="Connect with next stranger"
+          aria-label="Next stranger"
+          type="button"
+        >
+          <ForwardIcon className={`h-5 w-5 ${isSearching ? 'animate-pulse' : ''}`} />
+          <span className="text-sm font-semibold">
+            {isSearching ? 'Searching...' : 'Next Stranger'}
           </span>
-        )}
-      </button>
+        </button>
+        <span className="text-[11px] text-transparent select-none">Next</span>
+      </div>
 
-      {/* Leave button */}
-      <button
-        className="flex h-12 w-12 items-center justify-center rounded-2xl border border-red-500/20 bg-red-500/10 text-red-400 backdrop-blur-xl transition-all hover:bg-red-500/25 sm:h-14 sm:w-14"
-        onClick={onLeave}
-        title="Disconnect / Leave call"
-        type="button"
-      >
-        <PhoneXMarkIcon className="h-5 w-5 sm:h-6 sm:w-6" />
-      </button>
+      {/* 4. Chat Control */}
+      <div className="flex flex-col items-center gap-1">
+        <button
+          onClick={onToggleChat}
+          className={`relative flex h-12 w-12 sm:h-13 sm:w-13 items-center justify-center rounded-full border shadow-sm transition active:scale-95 cursor-pointer ${
+            isChatOpen
+              ? 'border-indigo-300 bg-indigo-50 text-indigo-600'
+              : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+          }`}
+          title="Toggle chat"
+          aria-label="Toggle chat"
+          type="button"
+        >
+          <ChatBubbleLeftRightIcon className="h-5 w-5" />
+          {unreadCount > 0 && !isChatOpen && (
+            <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-indigo-600 text-[10px] font-bold text-white">
+              {unreadCount}
+            </span>
+          )}
+        </button>
+        <span className="text-[11px] font-medium text-gray-500">Chat</span>
+      </div>
+
+      {/* 5. End Call Control */}
+      <div className="flex flex-col items-center gap-1">
+        <button
+          onClick={onLeave}
+          className="flex h-12 w-12 sm:h-13 sm:w-13 items-center justify-center rounded-full bg-red-600 text-white shadow-sm hover:bg-red-700 transition active:scale-95 cursor-pointer"
+          title="End Call and return to dashboard"
+          aria-label="End call"
+          type="button"
+        >
+          <PhoneXMarkIcon className="h-5 w-5" />
+        </button>
+        <span className="text-[11px] font-medium text-red-600">End Call</span>
+      </div>
     </div>
   )
 }

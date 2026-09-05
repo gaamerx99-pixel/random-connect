@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useUser } from '@clerk/clerk-react'
+import { useAuth, useUser } from '@clerk/clerk-react'
 import { getSignalingUrl } from '../../services/signaling/signalingClient'
 import type {
   ChatMessageItem,
@@ -34,6 +34,9 @@ export type WebRtcSignalingState = {
   isTimedOut: boolean
   startTestMatch: () => void
   isTestMode: boolean
+  rewardRequired: boolean
+  rewardRequiredMessage: string | null
+  clearRewardRequired: () => void
 }
 
 // Generate a unique session identifier for guest / multi-tab matching
@@ -170,6 +173,7 @@ export function useWebRtcSignaling(
   localStream: MediaStream | null,
 ): WebRtcSignalingState {
   const { user } = useUser()
+  const { getToken } = useAuth()
 
   // ============================================================
   // REFS
@@ -223,7 +227,14 @@ export function useWebRtcSignaling(
   const [timeoutLimit, setTimeoutLimit] = useState(30) // default 30s
   const [isTimedOut, setIsTimedOut] = useState(false)
   const [isTestMode, setIsTestMode] = useState(false)
+  const [rewardRequired, setRewardRequired] = useState(false)
+  const [rewardRequiredMessage, setRewardRequiredMessage] = useState<string | null>(null)
   const botReplyTimerRef = useRef<any>(null)
+
+  const clearRewardRequired = useCallback(() => {
+    setRewardRequired(false)
+    setRewardRequiredMessage(null)
+  }, [])
 
   // ============================================================
   // SEARCH TIMER (30s / 1m auto timeout)
@@ -920,7 +931,7 @@ export function useWebRtcSignaling(
             'auth-synced'
           ) {
             console.log(
-              '[Signaling] Auth synced:',
+              '[Signaling] Authentication SUCCESS: synced clerk_id =',
               message.clerk_id,
             )
 
@@ -1097,6 +1108,27 @@ export function useWebRtcSignaling(
           // ----------------------------------------------------
           // Backend error
           // ----------------------------------------------------
+
+          if (
+            message.type ===
+            'reward-required'
+          ) {
+            const rewardMsg =
+              message.message ||
+              'Watch 1 ad to connect with 1 female user.'
+
+            setErrorMessage(rewardMsg)
+            setRewardRequired(true)
+            setRewardRequiredMessage(rewardMsg)
+
+            setIsSearching(false)
+
+            setSignalingStatus(
+              'failed',
+            )
+
+            return
+          }
 
           if (
             message.type ===
@@ -1489,24 +1521,25 @@ export function useWebRtcSignaling(
       const generation =
         websocketGenerationRef.current
 
+      const wsUrl = getSignalingUrl()
+      console.log(
+        '[Signaling] Connecting to WebSocket URL:',
+        wsUrl,
+      )
+
       const websocket =
         new WebSocket(
-          getSignalingUrl(),
+          wsUrl,
         )
 
       websocketRef.current =
         websocket
 
-      console.log(
-        '[Signaling] Connecting to:',
-        getSignalingUrl(),
-      )
-
       // --------------------------------------------------------
       // OPEN
       // --------------------------------------------------------
 
-      websocket.onopen = () => {
+      websocket.onopen = async () => {
         if (
           websocketRef.current !==
           websocket
@@ -1515,7 +1548,8 @@ export function useWebRtcSignaling(
         }
 
         console.log(
-          '[Signaling] WebSocket OPEN',
+          '[Signaling] WebSocket connection OPENED successfully to:',
+          wsUrl,
         )
 
         setSignalingStatus(
@@ -1523,16 +1557,20 @@ export function useWebRtcSignaling(
         )
 
         const effectiveUserId = user?.id || getGuestSessionId()
+        const authToken = user?.id ? await getToken() : null
 
         console.log(
-          '[Signaling] Sending auth-sync:',
+          '[Signaling] Sending auth-sync: user_id =',
           effectiveUserId,
+          'hasAuthToken =',
+          Boolean(authToken),
         )
 
         websocket.send(
           JSON.stringify({
             type: 'auth-sync',
             clerk_id: effectiveUserId,
+            token: authToken,
           }),
         )
 
@@ -1596,7 +1634,7 @@ export function useWebRtcSignaling(
         }
 
         console.error(
-          '[Signaling] WebSocket ERROR:',
+          '[Signaling] WebSocket ERROR event triggered:',
           event,
         )
 
@@ -1628,9 +1666,7 @@ export function useWebRtcSignaling(
         }
 
         console.log(
-          '[Signaling] WebSocket CLOSED:',
-          event.code,
-          event.reason,
+          `[Signaling] WebSocket CLOSED: code = ${event.code}, reason = "${event.reason || 'none'}", clean = ${event.wasClean}`,
         )
 
         websocketRef.current =
@@ -1674,6 +1710,7 @@ export function useWebRtcSignaling(
       }
     }, [
       closePeerConnection,
+      getToken,
       user?.id,
     ])
 
@@ -1767,5 +1804,8 @@ export function useWebRtcSignaling(
     isTimedOut,
     startTestMatch,
     isTestMode,
+    rewardRequired,
+    rewardRequiredMessage,
+    clearRewardRequired,
   }
-}
+}

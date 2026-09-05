@@ -3,7 +3,7 @@ from fastapi import Depends, HTTPException, Header, status
 from jose import jwt, JWTError
 import httpx
 
-from app.config import CLERK_PEM_PUBLIC_KEY, CLERK_SECRET_KEY, JWT_ALGORITHM
+from app.config import CLERK_PEM_PUBLIC_KEY, CLERK_SECRET_KEY, JWT_ALGORITHM, ENVIRONMENT
 
 CLERK_JWKS_URL = "https://api.clerk.com/v1/jwks"
 _cached_jwks: Optional[dict] = None
@@ -33,6 +33,23 @@ async def verify_clerk_token(authorization: Optional[str] = Header(None)) -> dic
         )
 
     token = authorization.split(" ")[1]
+    return await verify_clerk_token_string(token)
+
+
+async def verify_clerk_token_string(token: str) -> dict:
+    """Verify a raw Clerk JWT string."""
+
+    # Support development / guest mode tokens when not in production
+    if ENVIRONMENT != "production" and (
+        token in ("mock-dev-token", "guest-token")
+        or token.startswith("mock-")
+        or token.startswith("guest_")
+    ):
+        return {
+            "sub": "guest_user",
+            "email": "guest@randomconnect.app",
+            "name": "Rahul (Guest User)",
+        }
 
     # Verify signature if key is present or fetch JWKS, else unverified decode in dev
     try:
