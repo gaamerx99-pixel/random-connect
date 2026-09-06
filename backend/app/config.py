@@ -24,4 +24,6 @@ CORS_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:3000",
+    "https://random-connect-ten.vercel.app",
+    "https://65.2.150.177.sslip.io",
 ]

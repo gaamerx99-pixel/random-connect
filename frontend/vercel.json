@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/api/:match*",
+      "destination": "https://65.2.150.177.sslip.io/api/:match*"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
