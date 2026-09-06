@@ -1,295 +1,407 @@
-import { motion } from 'framer-motion'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { SignInButton, SignUpButton, UserButton } from '@clerk/clerk-react'
 import {
-  BoltIcon,
-  CheckCircleIcon,
-  GlobeAltIcon,
-  LockClosedIcon,
-  PlayIcon,
-  ShieldCheckIcon,
-  SparklesIcon,
   VideoCameraIcon,
+  UserIcon,
+  ShieldCheckIcon,
   ArrowRightIcon,
+  PlayIcon,
+  LockClosedIcon,
+  HeartIcon,
+  ShieldExclamationIcon,
+  ArrowRightOnRectangleIcon,
+  MapPinIcon,
+  BanknotesIcon,
 } from '@heroicons/react/24/outline'
 
-import { Button } from '../../components/ui/Button'
-import { GlassPanel } from '../../components/ui/GlassPanel'
 import { useSafeAuth } from '../../contexts/AuthContext'
+import { BannerAd } from '../../components/ads/BannerAd'
+import { AgeWarningModal } from '../../components/common/AgeWarningModal'
 
-const fadeUp = {
-  hidden: { opacity: 0, y: 22 },
-  visible: { opacity: 1, y: 0 },
-}
-
-const features = [
-  {
-    title: 'Smart Gender & Preference Matching',
-    description: 'Connect with online strangers tailored to your gender preferences and language filters.',
-    icon: BoltIcon,
-  },
-  {
-    title: 'Secure & Private WebRTC Calls',
-    description: 'Direct peer-to-peer audio and video streaming with instant report and block controls.',
-    icon: ShieldCheckIcon,
-  },
-  {
-    title: 'Global Fast Matchmaking',
-    description: 'Sub-3 second queue matchmaking powered by FastAPI WebSockets & MongoDB.',
-    icon: GlobeAltIcon,
-  },
-]
-
-const stats = [
-  { value: '< 3s', label: 'Target match speed' },
-  { value: '100%', label: 'P2P WebRTC privacy' },
-  { value: '24/7', label: 'Always-on queue' },
-]
-
-function Navbar() {
-  const navigate = useNavigate()
-  const { isSignedIn, isClerkConfigured } = useSafeAuth()
-
-  return (
-    <header className="sticky top-0 z-50 border-b border-white/10 bg-[#07080d]/75 backdrop-blur-xl">
-      <nav className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 sm:px-8">
-        <a className="flex items-center gap-3" href="#top" aria-label="RandomConnect home">
-          <span className="flex h-9 w-9 items-center justify-center rounded-2xl border border-white/10 bg-white/10">
-            <VideoCameraIcon className="h-5 w-5 text-indigo-400" />
-          </span>
-          <span className="text-base font-semibold text-white">RandomConnect</span>
-        </a>
-
-        <div className="flex items-center gap-3">
-          {isSignedIn ? (
-            <>
-              <button
-                className="flex items-center gap-2 rounded-xl bg-indigo-600/30 border border-indigo-500/40 px-4 py-2 text-xs font-semibold text-indigo-200 hover:bg-indigo-600/50 transition"
-                onClick={() => navigate('/dashboard')}
-              >
-                <span>Dashboard</span>
-                <ArrowRightIcon className="h-3.5 w-3.5" />
-              </button>
-              <UserButton afterSignOutUrl="/" />
-            </>
-          ) : (
-            <div className="flex items-center gap-2">
-              <SignInButton mode="modal">
-                <Button className="min-h-9 px-3.5 text-xs font-medium" variant="secondary">
-                  Log in
-                </Button>
-              </SignInButton>
-              <SignUpButton mode="modal">
-                <Button className="min-h-9 px-3.5 text-xs font-semibold bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:from-indigo-600 hover:to-purple-700 shadow-md shadow-indigo-500/20">
-                  Create Account
-                </Button>
-              </SignUpButton>
-            </div>
-          )}
-        </div>
-      </nav>
-    </header>
-  )
-}
-
-function HeroVisual() {
-  return (
-    <motion.div
-      animate={{ y: [0, -10, 0] }}
-      className="relative mx-auto mt-12 aspect-[1.05] w-full max-w-[560px] lg:mt-0"
-      transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
-    >
-      <div className="absolute inset-0 rounded-[2rem] border border-white/10 bg-[linear-gradient(135deg,rgba(15,23,42,0.72),rgba(24,24,27,0.38)_42%,rgba(67,56,202,0.32))] shadow-[0_30px_100px_rgba(0,0,0,0.45)] backdrop-blur-xl" />
-      <div className="absolute left-[7%] top-[8%] h-[50%] w-[55%] overflow-hidden rounded-[1.5rem] border border-white/10 bg-zinc-950">
-        <div className="h-full bg-[linear-gradient(145deg,#18181b,#4338ca_52%,#111827)]" />
-        <div className="absolute left-4 top-4 flex items-center gap-2 rounded-full bg-black/35 px-3 py-1 text-xs text-white/80 backdrop-blur-md">
-          <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-          Local Camera
-        </div>
-      </div>
-      <div className="absolute bottom-[9%] right-[7%] h-[49%] w-[57%] overflow-hidden rounded-[1.5rem] border border-white/10 bg-zinc-950">
-        <div className="h-full bg-[linear-gradient(145deg,#312e81,#6b21a8_48%,#0f172a)]" />
-        <div className="absolute bottom-4 right-4 rounded-full bg-black/35 px-3 py-1 text-xs text-white/80 backdrop-blur-md">
-          Matched Stranger
-        </div>
-      </div>
-      <GlassPanel className="absolute bottom-[18%] left-[8%] flex items-center gap-3 rounded-2xl px-4 py-3">
-        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-500 text-white">
-          <PlayIcon className="h-5 w-5" />
-        </span>
-        <div>
-          <p className="text-sm font-semibold">Gender Match Engine</p>
-          <p className="text-xs text-zinc-300">FastAPI + WebSockets</p>
-        </div>
-      </GlassPanel>
-      <GlassPanel className="absolute right-[6%] top-[13%] rounded-2xl px-4 py-3">
-        <div className="flex items-center gap-2 text-sm font-semibold text-emerald-300">
-          <LockClosedIcon className="h-4 w-4" />
-          P2P Encrypted
-        </div>
-      </GlassPanel>
-    </motion.div>
-  )
-}
-
-function HeroSection() {
-  const navigate = useNavigate()
-  const { isSignedIn } = useSafeAuth()
-
-  return (
-    <section id="top" className="relative overflow-hidden">
-      <div className="absolute inset-0 bg-[linear-gradient(180deg,#07080d_0%,#101014_46%,#07080d_100%)]" />
-      <div className="absolute inset-0 opacity-30 [background-image:linear-gradient(rgba(255,255,255,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.045)_1px,transparent_1px)] [background-size:72px_72px]" />
-      <div className="relative mx-auto grid max-w-7xl items-center gap-12 px-5 pb-24 pt-20 sm:px-8 lg:grid-cols-[1.02fr_0.98fr] lg:pb-28 lg:pt-24">
-        <motion.div initial="hidden" animate="visible" transition={{ staggerChildren: 0.08 }}>
-          <motion.div
-            className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] px-4 py-2 text-sm text-zinc-200 backdrop-blur-xl"
-            variants={fadeUp}
-          >
-            <SparklesIcon className="h-4 w-4 text-amber-300" />
-            Next-Gen Random Video & Text Chat Application
-          </motion.div>
-          <motion.h1
-            className="max-w-4xl text-5xl font-semibold leading-[1.03] text-white sm:text-6xl lg:text-7xl"
-            variants={fadeUp}
-          >
-            Connect with new strangers around the world.
-          </motion.h1>
-          <motion.p className="mt-6 max-w-2xl text-lg leading-8 text-zinc-300 sm:text-xl" variants={fadeUp}>
-            RandomConnect delivers real-time P2P WebRTC video calls, gender-based matchmaking, instant report/block safety controls, and real-time chat.
-          </motion.p>
-          <motion.div className="mt-9 flex flex-col gap-3 sm:flex-row" variants={fadeUp}>
-            {isSignedIn ? (
-              <>
-                <button
-                  className="flex items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 px-8 py-4 font-bold text-white shadow-xl shadow-indigo-500/25 transition hover:scale-[1.02] active:scale-[0.98]"
-                  onClick={() => navigate('/dashboard')}
-                >
-                  <VideoCameraIcon className="h-6 w-6 animate-pulse" />
-                  <span>Go to Dashboard & Start Match</span>
-                </button>
-                <button
-                  className="flex items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-6 py-4 font-semibold text-white transition hover:bg-white/20"
-                  onClick={() => navigate('/waiting')}
-                >
-                  <span>Instant Stranger Video Call</span>
-                  <ArrowRightIcon className="h-4 w-4" />
-                </button>
-              </>
-            ) : (
-              <>
-                <SignUpButton mode="modal">
-                  <button className="flex items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 px-8 py-4 font-bold text-white shadow-xl shadow-indigo-500/25 transition hover:scale-[1.02] active:scale-[0.98]">
-                    <VideoCameraIcon className="h-6 w-6 animate-pulse" />
-                    <span>Create Account & Start Match</span>
-                  </button>
-                </SignUpButton>
-                <SignInButton mode="modal">
-                  <button className="flex items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-6 py-4 font-semibold text-white transition hover:bg-white/20">
-                    <span>Already have account? Log in</span>
-                    <ArrowRightIcon className="h-4 w-4" />
-                  </button>
-                </SignInButton>
-              </>
-            )}
-          </motion.div>
-
-          <motion.div className="mt-7 flex flex-col gap-3 text-sm text-zinc-400 sm:flex-row sm:items-center" variants={fadeUp}>
-            <span className="flex items-center gap-2">
-              <CheckCircleIcon className="h-5 w-5 text-emerald-300" />
-              Clerk Auth Ready
-            </span>
-            <span className="flex items-center gap-2">
-              <CheckCircleIcon className="h-5 w-5 text-emerald-300" />
-              MongoDB Database
-            </span>
-            <span className="flex items-center gap-2">
-              <CheckCircleIcon className="h-5 w-5 text-emerald-300" />
-              P2P WebRTC Video Call
-            </span>
-          </motion.div>
-        </motion.div>
-        <HeroVisual />
-      </div>
-    </section>
-  )
-}
-
-function FeaturesSection() {
-  return (
-    <section id="features" className="mx-auto max-w-7xl px-5 py-20 sm:px-8">
-      <div className="mb-10 max-w-2xl">
-        <p className="text-sm font-semibold uppercase text-indigo-400">Platform Features</p>
-        <h2 className="mt-3 text-3xl font-semibold text-white sm:text-4xl">Everything you need for safe & fast random chat.</h2>
-      </div>
-      <div className="grid gap-4 md:grid-cols-3">
-        {features.map((feature, index) => {
-          const Icon = feature.icon
-          return (
-            <motion.article
-              className="rounded-3xl border border-white/10 bg-white/[0.055] p-6 backdrop-blur-xl transition hover:bg-white/[0.075]"
-              initial={{ opacity: 0, y: 18 }}
-              key={feature.title}
-              transition={{ delay: index * 0.08, duration: 0.45 }}
-              viewport={{ once: true, amount: 0.4 }}
-              whileInView={{ opacity: 1, y: 0 }}
-            >
-              <span className="mb-8 flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-500 text-white">
-                <Icon className="h-6 w-6" />
-              </span>
-              <h3 className="text-xl font-semibold">{feature.title}</h3>
-              <p className="mt-3 leading-7 text-zinc-400">{feature.description}</p>
-            </motion.article>
-          )
-        })}
-      </div>
-    </section>
-  )
-}
-
-function StatsSection() {
-  return (
-    <section id="stats" className="mx-auto max-w-7xl px-5 py-16 sm:px-8">
-      <GlassPanel className="grid gap-6 rounded-[2rem] p-6 sm:grid-cols-3 sm:p-8">
-        {stats.map((stat) => (
-          <div className="border-white/10 py-3 sm:border-l sm:first:border-l-0 sm:first:pl-0 sm:pl-8" key={stat.label}>
-            <p className="text-4xl font-semibold text-white">{stat.value}</p>
-            <p className="mt-2 text-sm text-zinc-400">{stat.label}</p>
-          </div>
-        ))}
-      </GlassPanel>
-    </section>
-  )
-}
-
-function Footer() {
-  return (
-    <footer className="border-t border-white/10 px-5 py-8 sm:px-8">
-      <div className="mx-auto flex max-w-7xl flex-col gap-4 text-sm text-zinc-400 sm:flex-row sm:items-center sm:justify-between">
-        <p>RandomConnect © {new Date().getFullYear()}</p>
-        <div className="flex gap-5">
-          <a className="transition hover:text-white" href="#features">
-            Features
-          </a>
-          <a className="transition hover:text-white" href="#stats">
-            Stats
-          </a>
-        </div>
-      </div>
-    </footer>
-  )
-}
+const AGE_STORAGE_KEY = 'randomconnect_age_confirmed'
 
 export function LandingPage() {
+  const navigate = useNavigate()
+  const { isSignedIn, isClerkConfigured } = useSafeAuth()
+  const [showAgeWarning, setShowAgeWarning] = useState(false)
+
+  // 18+ Age Warning Gate: check on mount if confirmed in localStorage
+  useEffect(() => {
+    try {
+      const isConfirmed = localStorage.getItem(AGE_STORAGE_KEY)
+      if (isConfirmed !== 'true') {
+        setShowAgeWarning(true)
+      }
+    } catch {
+      setShowAgeWarning(true)
+    }
+  }, [])
+
+  const handleConfirmAge = () => {
+    try {
+      localStorage.setItem(AGE_STORAGE_KEY, 'true')
+    } catch {
+      // Ignore storage errors safely
+    }
+    setShowAgeWarning(false)
+  }
+
+  const handleStartConnecting = () => {
+    navigate('/dashboard')
+  }
+
+  const safetyGuidelines = [
+    {
+      title: '1. Protect Your Privacy',
+      description:
+        'Never share your password, home address, phone number, financial information or other sensitive personal details with strangers.',
+      icon: LockClosedIcon,
+    },
+    {
+      title: '2. Respect Other People',
+      description:
+        'Treat everyone respectfully. Harassment, bullying, threats and abusive behavior are not allowed.',
+      icon: HeartIcon,
+    },
+    {
+      title: '3. Report or Block',
+      description:
+        'If someone makes you uncomfortable or violates the rules, use the Report or Block controls immediately.',
+      icon: ShieldExclamationIcon,
+    },
+    {
+      title: '4. End the Conversation',
+      description:
+        'You can leave a conversation at any time. You never have to continue talking to someone.',
+      icon: ArrowRightOnRectangleIcon,
+    },
+    {
+      title: '5. Meet Responsibly',
+      description:
+        'RandomConnect connects you with strangers. Do not arrange unsafe in-person meetings or share your exact location with people you do not know.',
+      icon: MapPinIcon,
+    },
+    {
+      title: '6. Never Send Money',
+      description:
+        'Never send money, payment information, gift cards or financial details to someone you meet through the platform.',
+      icon: BanknotesIcon,
+    },
+  ]
+
   return (
-    <>
-      <Navbar />
-      <main>
-        <HeroSection />
-        <FeaturesSection />
-        <StatsSection />
+    <div className="min-h-screen bg-white text-gray-900 flex flex-col">
+      {/* 1. Header (Navbar) */}
+      <header className="sticky top-0 z-40 w-full border-b border-gray-200 bg-white shadow-xs">
+        <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-6">
+          {/* Logo */}
+          <Link
+            to="/"
+            className="flex items-center gap-2.5 group cursor-pointer"
+            aria-label="RandomConnect Home"
+            title="RandomConnect Home"
+          >
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm transition group-hover:bg-indigo-700">
+              <VideoCameraIcon className="h-5 w-5" />
+            </div>
+            <span className="text-lg font-bold tracking-tight text-gray-900 group-hover:text-gray-950 transition">
+              Random<span className="text-indigo-600">Connect</span>
+            </span>
+          </Link>
+
+          {/* Desktop Nav Links */}
+          <nav className="hidden sm:flex items-center space-x-6 text-sm font-medium text-gray-600">
+            <Link to="/" className="text-indigo-600 font-semibold">
+              Home
+            </Link>
+            <a href="#features" className="hover:text-gray-900 transition">
+              Features
+            </a>
+            <a href="#how-it-works" className="hover:text-gray-900 transition">
+              How It Works
+            </a>
+            <a href="#safety" className="hover:text-gray-900 transition">
+              Safety
+            </a>
+          </nav>
+
+          {/* Right Action Buttons */}
+          <div className="flex items-center gap-3">
+            {isSignedIn ? (
+              <div className="flex items-center gap-3">
+                <Link
+                  to="/dashboard"
+                  className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700 shadow-sm transition inline-flex items-center gap-1.5"
+                >
+                  <span>Dashboard</span>
+                  <ArrowRightIcon className="h-3.5 w-3.5" />
+                </Link>
+                <UserButton afterSignOutUrl="/" />
+              </div>
+            ) : isClerkConfigured ? (
+              <div className="flex items-center gap-2">
+                <SignInButton mode="modal">
+                  <button className="px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition cursor-pointer">
+                    Sign In
+                  </button>
+                </SignInButton>
+                <SignUpButton mode="modal">
+                  <button className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 shadow-sm transition cursor-pointer">
+                    Get Started
+                  </button>
+                </SignUpButton>
+              </div>
+            ) : (
+              <Link
+                to="/dashboard"
+                className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 shadow-sm transition"
+              >
+                Get Started
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content Area */}
+      <main className="flex-1">
+        {/* 2. Hero Section */}
+        <section className="mx-auto max-w-4xl px-4 pt-11 pb-8 text-center">
+          <div className="mx-auto mb-3.5 inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
+            <span>🔞</span>
+            <span>18+ Adults Only Platform</span>
+          </div>
+
+          <h1 className="text-4xl font-extrabold tracking-tight text-gray-900 sm:text-5xl md:text-6xl">
+            Meet someone <span className="text-indigo-600">new.</span>
+          </h1>
+
+          <p className="mx-auto mt-3.5 max-w-2xl text-base sm:text-lg text-gray-500 leading-relaxed">
+            Start a random video conversation with someone new.
+          </p>
+
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-3.5">
+            <button
+              onClick={handleStartConnecting}
+              className="rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 transition active:scale-[0.99] inline-flex items-center gap-2 cursor-pointer"
+            >
+              <span>Start Connecting</span>
+              <ArrowRightIcon className="h-4 w-4" />
+            </button>
+
+            <a
+              href="#how-it-works"
+              className="rounded-xl border border-gray-200 bg-white px-5 py-3 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition active:scale-[0.99] inline-flex items-center gap-2 cursor-pointer"
+            >
+              <PlayIcon className="h-4 w-4 text-indigo-600" />
+              <span>How it works</span>
+            </a>
+          </div>
+        </section>
+
+        {/* 3. Banner Advertisement (Hero Bottom) */}
+        <div className="px-4 py-3">
+          <BannerAd slotId="landing-hero-bottom" />
+        </div>
+
+        {/* 4. Three Simple Features */}
+        <section id="features" className="mx-auto max-w-5xl px-4 py-10">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            {/* Feature 1 */}
+            <div className="rounded-xl border border-gray-200 bg-[#f9fafb] p-6 text-center shadow-xs transition hover:border-gray-300">
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600">
+                <VideoCameraIcon className="h-6 w-6" />
+              </div>
+              <h2 className="text-base font-bold text-gray-900">Video Chat</h2>
+              <p className="mt-1.5 text-xs sm:text-sm text-gray-500">
+                Real-time conversations
+              </p>
+            </div>
+
+            {/* Feature 2 */}
+            <div className="rounded-xl border border-gray-200 bg-[#f9fafb] p-6 text-center shadow-xs transition hover:border-gray-300">
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600">
+                <UserIcon className="h-6 w-6" />
+              </div>
+              <h2 className="text-base font-bold text-gray-900">Easy Matching</h2>
+              <p className="mt-1.5 text-xs sm:text-sm text-gray-500">
+                Choose who you want to meet
+              </p>
+            </div>
+
+            {/* Feature 3 */}
+            <div className="rounded-xl border border-gray-200 bg-[#f9fafb] p-6 text-center shadow-xs transition hover:border-gray-300">
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600">
+                <ShieldCheckIcon className="h-6 w-6" />
+              </div>
+              <h2 className="text-base font-bold text-gray-900">Safety First</h2>
+              <p className="mt-1.5 text-xs sm:text-sm text-gray-500">
+                Block and report unwanted users
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* 5. How It Works (Inline Desktop Section) */}
+        <section id="how-it-works" className="mx-auto max-w-5xl px-4 py-10 border-t border-gray-100">
+          <div className="text-center max-w-2xl mx-auto mb-8">
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">
+              How It Works
+            </h2>
+            <p className="mt-2 text-sm sm:text-base text-gray-500">
+              Meeting new people is simple and easy.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <div className="rounded-xl border border-gray-200 bg-white p-6 text-center shadow-xs">
+              <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 border border-indigo-100 text-sm font-bold text-indigo-600">
+                1
+              </span>
+              <h3 className="mt-4 text-sm font-bold text-gray-900">Set Preference</h3>
+              <p className="mt-1.5 text-xs text-gray-500 leading-relaxed">
+                Choose who you want to meet: Anyone, Female Only, or Male Only.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-gray-200 bg-white p-6 text-center shadow-xs">
+              <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 border border-indigo-100 text-sm font-bold text-indigo-600">
+                2
+              </span>
+              <h3 className="mt-4 text-sm font-bold text-gray-900">Start Match</h3>
+              <p className="mt-1.5 text-xs text-gray-500 leading-relaxed">
+                Click Start Video Match to enter the private WebRTC matching queue.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-gray-200 bg-white p-6 text-center shadow-xs">
+              <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 border border-indigo-100 text-sm font-bold text-indigo-600">
+                3
+              </span>
+              <h3 className="mt-4 text-sm font-bold text-gray-900">Connect & Chat</h3>
+              <p className="mt-1.5 text-xs text-gray-500 leading-relaxed">
+                Talk via live video and audio, text in private chat, or skip to the next person.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* 6. Banner Advertisement (Mid Section) */}
+        <div className="px-4 py-3">
+          <BannerAd slotId="landing-mid-bottom" />
+        </div>
+
+        {/* 7. Comprehensive Safety First Section */}
+        <section id="safety" className="mx-auto max-w-5xl px-4 py-10 border-t border-gray-100">
+          <div className="text-center max-w-2xl mx-auto mb-8">
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">
+              Safety First
+            </h2>
+            <p className="mt-2 text-sm sm:text-base text-gray-500">
+              Your safety matters when meeting people online.
+            </p>
+          </div>
+
+          {/* 6 Safety Points: Clean 2-column desktop layout */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
+            {safetyGuidelines.map((item) => {
+              const Icon = item.icon
+              return (
+                <div
+                  key={item.title}
+                  className="flex items-start gap-4 rounded-xl border border-gray-200 bg-[#f9fafb] p-5 shadow-xs transition hover:border-gray-300"
+                >
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600">
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-900">{item.title}</h3>
+                    <p className="mt-1 text-xs sm:text-sm text-gray-600 leading-relaxed">
+                      {item.description}
+                    </p>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Safety Notice */}
+          <div className="mt-6 rounded-xl border border-gray-200 bg-white p-4 sm:p-5 text-center shadow-xs">
+            <p className="text-xs sm:text-sm text-gray-600 leading-relaxed max-w-2xl mx-auto">
+              RandomConnect connects you with people you may not know. Stay cautious, protect your
+              personal information, and report anything that makes you uncomfortable.
+            </p>
+          </div>
+        </section>
+
+        {/* 8. Final CTA Section */}
+        <section className="mx-auto max-w-5xl px-4 py-10">
+          <div className="rounded-2xl border border-gray-200 bg-[#f9fafb] p-8 sm:p-10 text-center shadow-xs">
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">
+              Ready to meet someone new?
+            </h2>
+            <p className="mt-2 text-sm sm:text-base text-gray-500 max-w-xl mx-auto">
+              Start a friendly, spontaneous video conversation right now.
+            </p>
+            <div className="mt-6 flex justify-center">
+              <button
+                onClick={handleStartConnecting}
+                className="rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 transition active:scale-[0.99] inline-flex items-center gap-2 cursor-pointer"
+              >
+                <span>Start Connecting</span>
+                <ArrowRightIcon className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </section>
       </main>
-      <Footer />
-    </>
+
+      {/* 9. Compact Legal Footer */}
+      <footer className="border-t border-gray-200 bg-white py-8 text-xs text-gray-500">
+        <div className="mx-auto max-w-5xl px-4 sm:px-6">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            {/* Brand & 18+ Notice */}
+            <div className="flex items-center gap-3">
+              <span className="font-bold text-gray-900">Random<span className="text-indigo-600">Connect</span></span>
+              <span className="text-gray-300">|</span>
+              <span className="inline-flex items-center gap-1 font-medium text-gray-600 text-[11px]">
+                <span>🔞</span>
+                <span>18+ Adults Only</span>
+              </span>
+            </div>
+
+            {/* Compact Legal Links */}
+            <nav className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs font-medium text-gray-600" aria-label="Legal and safety links">
+              <Link to="/terms" className="hover:text-indigo-600 transition">
+                Terms of Service
+              </Link>
+              <Link to="/privacy" className="hover:text-indigo-600 transition">
+                Privacy Policy
+              </Link>
+              <Link to="/community-guidelines" className="hover:text-indigo-600 transition">
+                Community Guidelines
+              </Link>
+              <Link to="/safety" className="hover:text-indigo-600 transition">
+                Safety
+              </Link>
+              <Link to="/cookies" className="hover:text-indigo-600 transition">
+                Cookie Policy
+              </Link>
+              <Link to="/contact" className="hover:text-indigo-600 transition">
+                Contact / Grievance
+              </Link>
+            </nav>
+          </div>
+
+          <div className="mt-6 pt-4 border-t border-gray-100 text-center text-[11px] text-gray-400">
+            <p>© {new Date().getFullYear()} RandomConnect. All rights reserved. Intended strictly for adults 18 years and older.</p>
+          </div>
+        </div>
+      </footer>
+
+      {/* 18+ Age Warning Modal (non-bypassable confirmation gate) */}
+      <AgeWarningModal isOpen={showAgeWarning} onConfirm={handleConfirmAge} />
+    </div>
   )
 }

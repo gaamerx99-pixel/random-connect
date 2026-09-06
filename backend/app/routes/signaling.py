@@ -4,6 +4,7 @@ from uuid import uuid4
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.db import users_collection
+from app.middleware.auth import verify_clerk_token_string
 
 router = APIRouter()
 
@@ -109,6 +110,13 @@ def normalize_looking_for(
     }
 
     return aliases.get(value, value)
+
+
+def requires_female_search_credit(user: dict) -> bool:
+    return (
+        normalize_gender(user.get("gender"), "male") == "male"
+        and normalize_looking_for(user.get("looking_for"), "anyone") == "female"
+    )
 
 
 def sanitize_metadata(
@@ -643,6 +651,8 @@ async def handle_signaling_websocket(
     # Confirm websocket connection
     # --------------------------------------------------------
 
+    print(f"[Signaling] WebSocket client connected: {client_id}")
+
     await send_json(
         client_id,
         {
@@ -667,11 +677,27 @@ async def handle_signaling_websocket(
 
             if message_type == "auth-sync":
 
+                token = message.get(
+                    "token"
+                )
+
                 clerk_id = message.get(
                     "clerk_id"
                 )
 
+                if token:
+                    try:
+                        payload = await verify_clerk_token_string(
+                            str(token)
+                        )
+                        token_sub = payload.get("sub")
+                        if token_sub:
+                            clerk_id = token_sub
+                    except Exception as auth_err:
+                        print(f"[Signaling] Token verification notice for {client_id}: {auth_err}")
+
                 if not clerk_id:
+                    print(f"[Signaling] Missing Clerk user ID for {client_id}")
                     await send_json(
                         client_id,
                         {
@@ -684,14 +710,18 @@ async def handle_signaling_websocket(
 
                     continue
 
-                user_doc = await users_collection.find_one(
-                    {
-                        "clerk_id": clerk_id
-                    },
-                    {
-                        "_id": 0
-                    },
-                )
+                user_doc = None
+                try:
+                    user_doc = await users_collection.find_one(
+                        {
+                            "clerk_id": clerk_id
+                        },
+                        {
+                            "_id": 0
+                        },
+                    )
+                except Exception as db_err:
+                    print(f"[Signaling Auth Sync DB Warning for {client_id}]: {db_err}")
 
                 # ---------------------------------------------
                 # User exists in MongoDB
@@ -731,6 +761,8 @@ async def handle_signaling_websocket(
                 # ---------------------------------------------
                 # Confirm auth sync
                 # ---------------------------------------------
+
+                print(f"[Signaling] Authentication SUCCESS: client_id={client_id}, clerk_id={clerk_id}")
 
                 await send_json(
                     client_id,
@@ -830,6 +862,8 @@ async def handle_signaling_websocket(
         # Remove websocket
         # ----------------------------------------------------
 
+        print(f"[Signaling] WebSocket client disconnected: client_id={client_id}")
+
         CLIENTS.pop(
             client_id,
             None,
@@ -849,11 +883,13 @@ async def handle_signaling_websocket(
             requeue_client=False,
         )
 
-    except Exception:
+    except Exception as exc:
 
         # ----------------------------------------------------
         # Unexpected websocket error
         # ----------------------------------------------------
+
+        print(f"[Signaling] WebSocket unexpected error for client_id={client_id}: {exc}")
 
         CLIENTS.pop(
             client_id,

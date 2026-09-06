@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.middleware.auth import verify_clerk_token
 from app.models.user import (
     ProfileCreateUpdate,
+    RewardedAdCompletionCreate,
     UserBlockCreate,
     UserReportCreate,
 )
@@ -12,6 +13,10 @@ from app.db import (
     users_collection,
     reports_collection,
     blocks_collection,
+)
+from app.services.rewards import (
+    get_female_reward_state,
+    verify_reward_completion,
 )
 
 
@@ -85,6 +90,51 @@ def build_user_name(
         return email.split("@")[0]
 
     return "Anonymous"
+
+
+# ============================================================
+# FEMALE MATCH REWARDS
+# ============================================================
+
+@router.get("/rewards/female-match")
+async def get_my_female_match_rewards(
+    payload: dict = Depends(
+        verify_clerk_token
+    ),
+):
+    clerk_id = payload.get("sub")
+
+    if not clerk_id:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid Clerk token.",
+        )
+
+    return await get_female_reward_state(
+        clerk_id
+    )
+
+
+@router.post("/rewards/female-ad-completion")
+async def complete_female_rewarded_ad(
+    reward: RewardedAdCompletionCreate,
+    payload: dict = Depends(
+        verify_clerk_token
+    ),
+):
+    clerk_id = payload.get("sub")
+
+    if not clerk_id:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid Clerk token.",
+        )
+
+    return await verify_reward_completion(
+        clerk_id,
+        reward.provider,
+        reward.reward_event_id,
+    )
 
 
 # ============================================================
@@ -194,6 +244,14 @@ async def sync_user(
             "blocked_users": [],
 
             "friends": [],
+
+            "female_reward_ads_completed": 0,
+
+            "female_match_credits": 0,
+
+            "female_reward_unlocks": 0,
+
+            "female_match_credits_consumed": 0,
 
             "created_at": now,
 

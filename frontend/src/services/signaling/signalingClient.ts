@@ -8,10 +8,16 @@ export function getSignalingUrl() {
   }
 
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const isLocalVite = window.location.hostname === 'localhost' && window.location.port === '5173'
+  const hostname = window.location.hostname
+  const port = window.location.port
+
+  const isLocalVite =
+    (hostname === 'localhost' || hostname === '127.0.0.1') &&
+    (port === '5173' || port === '3000')
 
   if (isLocalVite) {
-    return `${protocol}//localhost:8000${SIGNALING_PATH}`
+    const backendHost = hostname === '127.0.0.1' ? '127.0.0.1' : 'localhost'
+    return `${protocol}//${backendHost}:8000${SIGNALING_PATH}`
   }
 
   return `${protocol}//${window.location.host}${SIGNALING_PATH}`
