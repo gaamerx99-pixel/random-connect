@@ -82,6 +82,81 @@ export async function blockUser(token: string, blockedClerkId: string) {
   })
 }
 
+export interface BlockedUserItem {
+  clerk_id: string
+  name: string
+  image: string
+  country: string
+  gender: string
+}
+
+export async function unblockUser(token: string, blockedClerkId: string): Promise<{ message: string; unblocked_id: string }> {
+  return fetchWithAuth('/users/unblock', token, {
+    method: 'POST',
+    body: JSON.stringify({ blocked_clerk_id: blockedClerkId }),
+  })
+}
+
+export async function getBlockedUsers(token: string): Promise<{ blocked_users: BlockedUserItem[] }> {
+  return fetchWithAuth('/users/blocked', token, { method: 'GET' })
+}
+
+export interface SignalingStats {
+  online_users: number
+  waiting_users: number
+  active_calls: number
+  total_users: number
+}
+
+let statsEndpointUnavailable = false
+let lastStatsCheck = 0
+
+export async function getSignalingStats(): Promise<SignalingStats> {
+  const defaultStats: SignalingStats = {
+    online_users: 1,
+    waiting_users: 0,
+    active_calls: 0,
+    total_users: 1,
+  }
+
+  // If endpoint is confirmed unavailable on this backend, back off for 3 minutes before checking again
+  const now = Date.now()
+  if (statsEndpointUnavailable && now - lastStatsCheck < 180000) {
+    return defaultStats
+  }
+
+  const isLocal = typeof window !== 'undefined' &&
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+
+  // Prioritize local Vite proxy if developing on localhost
+  const candidates: string[] = []
+  if (isLocal) {
+    candidates.push('/api/v1/signaling/stats')
+    candidates.push('/api/v1/stats')
+  }
+  if (API_BASE_URL && !candidates.includes(`${API_BASE_URL}/signaling/stats`)) {
+    candidates.push(`${API_BASE_URL}/signaling/stats`)
+  }
+
+  for (const url of candidates) {
+    try {
+      const res = await fetch(url)
+      if (res.ok) {
+        statsEndpointUnavailable = false
+        lastStatsCheck = now
+        return await res.json()
+      }
+    } catch {
+      // Ignore network errors
+    }
+  }
+
+  // Mark unavailable to prevent continuous 404 console spamming
+  statsEndpointUnavailable = true
+  lastStatsCheck = now
+  return defaultStats
+}
+
 export async function getFemaleRewardState(token: string): Promise<FemaleRewardState> {
   return fetchWithAuth('/users/rewards/female-match', token, { method: 'GET' })
 }
@@ -107,4 +182,5 @@ export async function getMockProfiles(): Promise<{ profiles: UserProfile[]; coun
 export async function seedMockUsers(): Promise<{ message: string; seeded_count: number }> {
   return fetchWithAuth('/users/seed-mock-users', undefined, { method: 'POST' })
 }
+
 

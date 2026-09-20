@@ -20,9 +20,15 @@ import {
   getFemaleRewardState,
   completeFemaleRewardedAd,
   syncUserWithBackend,
+  getSignalingStats,
+  getBlockedUsers,
+  unblockUser,
   UserProfile,
   FemaleRewardState,
+  SignalingStats,
+  BlockedUserItem,
 } from '../services/api'
+import { XMarkIcon } from '@heroicons/react/24/outline'
 
 const DEFAULT_GUEST_PROFILE: UserProfile = {
   clerk_id: 'guest_user',
@@ -64,6 +70,19 @@ export function DashboardPage() {
   const [rewardLoading, setRewardLoading] = useState(false)
   const [rewardError, setRewardError] = useState('')
   const [showRewardModal, setShowRewardModal] = useState(false)
+
+  // Real-time live stats from backend signaling API
+  const [onlineStats, setOnlineStats] = useState<SignalingStats>({
+    online_users: 1,
+    waiting_users: 0,
+    active_calls: 0,
+    total_users: 1,
+  })
+
+  // Blocked users modal state
+  const [showBlockedModal, setShowBlockedModal] = useState(false)
+  const [blockedUsers, setBlockedUsers] = useState<BlockedUserItem[]>([])
+  const [loadingBlocked, setLoadingBlocked] = useState(false)
 
   const clerkDisplayName =
     user?.fullName ||
@@ -223,13 +242,64 @@ export function DashboardPage() {
     setShowRewardModal(true)
   }
 
+  // Fetch live active server stats from backend signaling API
+  useEffect(() => {
+    let cancelled = false
+    const fetchStats = async () => {
+      try {
+        const res = await getSignalingStats()
+        if (!cancelled) setOnlineStats(res)
+      } catch (err) {
+        // Fallback gracefully
+      }
+    }
+
+    fetchStats()
+    const timer = setInterval(fetchStats, 12000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [])
+
+  // Open Blocked Users modal and fetch real list
+  const handleOpenBlockedModal = async () => {
+    setShowBlockedModal(true)
+    const effectiveToken = token || 'mock-dev-token'
+    try {
+      setLoadingBlocked(true)
+      const res = await getBlockedUsers(effectiveToken)
+      setBlockedUsers(res.blocked_users || [])
+    } catch (err) {
+      console.warn('Failed to load blocked users:', err)
+    } finally {
+      setLoadingBlocked(false)
+    }
+  }
+
+  // Unblock user handler
+  const handleUnblockUser = async (blockedClerkId: string) => {
+    const effectiveToken = token || 'mock-dev-token'
+    try {
+      await unblockUser(effectiveToken, blockedClerkId)
+      setBlockedUsers((prev) => prev.filter((u) => u.clerk_id !== blockedClerkId))
+      setProfile((prev) => ({
+        ...prev,
+        blocked_users: (prev.blocked_users || []).filter((id) => id !== blockedClerkId),
+      }))
+    } catch (err) {
+      console.error('Failed to unblock user:', err)
+    }
+  }
+
   const selectedMode = (profile?.looking_for || 'anyone').toLowerCase()
   const femaleCredits = femaleRewardState?.female_match_credits || 0
   const userInitial = (displayName.charAt(0) || 'S').toUpperCase()
 
-  const statsMatches = 12
-  const statsFriends = profile.friends?.length ? profile.friends.length : 5
-  const statsBlocked = profile.blocked_users?.length ? profile.blocked_users.length : 3
+  // Real statistics (no hardcoded numbers)
+  const realFriendsCount = profile.friends ? profile.friends.length : 0
+  const realBlockedCount = profile.blocked_users ? profile.blocked_users.length : 0
+
 
   return (
     <div className="min-h-screen bg-[#fafbfc] text-gray-900 flex flex-col">
@@ -323,39 +393,50 @@ export function DashboardPage() {
           </div>
 
           {/* Stats Row */}
-          <div className="mb-6 grid grid-cols-3 gap-3.5">
-            {/* Stat 1: Video Matches */}
-            <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
-                <VideoCameraIcon className="h-5 w-5" />
+          {/* Stats Row with Real Data */}
+          <div className="mb-6 grid grid-cols-3 gap-2 sm:gap-3.5">
+            {/* Stat 1: Live Users Online */}
+            <div className="flex flex-col sm:flex-row items-center text-center sm:text-left gap-1.5 sm:gap-3 rounded-xl border border-gray-200 bg-white p-2.5 sm:p-4 shadow-sm min-w-0">
+              <div className="flex h-8 w-8 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+                <span className="relative flex h-2.5 w-2.5 sm:h-3 sm:w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 sm:h-3 sm:w-3 bg-emerald-500" />
+                </span>
               </div>
-              <div>
-                <p className="text-base sm:text-lg font-bold text-gray-900">{statsMatches}</p>
-                <p className="text-[11px] text-gray-500 font-medium">Video Matches</p>
+              <div className="min-w-0 w-full">
+                <p className="text-sm sm:text-lg font-bold text-gray-900 truncate">{onlineStats.online_users}</p>
+                <p className="text-[10px] sm:text-[11px] text-gray-500 font-medium truncate">Online Now</p>
               </div>
             </div>
 
             {/* Stat 2: Friends */}
-            <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
-                <UserGroupIcon className="h-5 w-5" />
+            <Link
+              to="/friends"
+              className="flex flex-col sm:flex-row items-center text-center sm:text-left gap-1.5 sm:gap-3 rounded-xl border border-gray-200 bg-white p-2.5 sm:p-4 shadow-sm hover:border-indigo-200 transition cursor-pointer group min-w-0"
+            >
+              <div className="flex h-8 w-8 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 group-hover:scale-105 transition">
+                <UserGroupIcon className="h-4 w-4 sm:h-5 sm:w-5" />
               </div>
-              <div>
-                <p className="text-base sm:text-lg font-bold text-gray-900">{statsFriends}</p>
-                <p className="text-[11px] text-gray-500 font-medium">Friends</p>
+              <div className="min-w-0 w-full">
+                <p className="text-sm sm:text-lg font-bold text-gray-900 truncate">{realFriendsCount}</p>
+                <p className="text-[10px] sm:text-[11px] text-gray-500 font-medium truncate">Friends</p>
               </div>
-            </div>
+            </Link>
 
-            {/* Stat 3: Blocked */}
-            <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-50 text-red-500">
-                <NoSymbolIcon className="h-5 w-5" />
+            {/* Stat 3: Blocked (Real list & Unblock action) */}
+            <button
+              onClick={handleOpenBlockedModal}
+              type="button"
+              className="flex flex-col sm:flex-row items-center text-center sm:text-left gap-1.5 sm:gap-3 rounded-xl border border-gray-200 bg-white p-2.5 sm:p-4 shadow-sm hover:border-red-200 transition cursor-pointer group min-w-0"
+            >
+              <div className="flex h-8 w-8 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-lg bg-red-50 text-red-500 group-hover:scale-105 transition">
+                <NoSymbolIcon className="h-4 w-4 sm:h-5 sm:w-5" />
               </div>
-              <div>
-                <p className="text-base sm:text-lg font-bold text-gray-900">{statsBlocked}</p>
-                <p className="text-[11px] text-gray-500 font-medium">Blocked</p>
+              <div className="min-w-0 w-full">
+                <p className="text-sm sm:text-lg font-bold text-gray-900 truncate">{realBlockedCount}</p>
+                <p className="text-[10px] sm:text-[11px] text-gray-500 font-medium truncate">Blocked</p>
               </div>
-            </div>
+            </button>
           </div>
 
           {/* Compact Profile Summary Card */}
@@ -393,6 +474,80 @@ export function DashboardPage() {
           <BannerAd slotId="dashboard-page-bottom" />
         </div>
       </main>
+
+      {/* Blocked Users Management Modal */}
+      {showBlockedModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
+          <div className="relative w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-50 text-red-500">
+                  <NoSymbolIcon className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-gray-900">Blocked Users</h3>
+                  <p className="text-[11px] text-gray-500">
+                    {realBlockedCount} {realBlockedCount === 1 ? 'user' : 'users'} blocked
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowBlockedModal(false)}
+                className="rounded-lg p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition"
+              >
+                <XMarkIcon className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 max-h-72 overflow-y-auto divide-y divide-gray-100">
+              {loadingBlocked ? (
+                <p className="py-8 text-center text-xs text-gray-400">Loading blocked users...</p>
+              ) : blockedUsers.length === 0 ? (
+                <div className="py-8 text-center">
+                  <p className="text-sm font-semibold text-gray-700">No blocked users</p>
+                  <p className="text-xs text-gray-400 mt-1 max-w-xs mx-auto">
+                    When you block someone during a video call, they will appear here and will never be paired with you again.
+                  </p>
+                </div>
+              ) : (
+                blockedUsers.map((u) => (
+                  <div key={u.clerk_id} className="flex items-center justify-between py-3">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-gray-600 font-bold text-sm overflow-hidden">
+                        {u.image ? (
+                          <img src={u.image} alt={u.name} className="h-full w-full object-cover" />
+                        ) : (
+                          <span>{(u.name.charAt(0) || 'U').toUpperCase()}</span>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-xs sm:text-sm font-bold text-gray-900">{u.name}</p>
+                        <p className="text-[11px] text-gray-500">{u.country} · {u.gender}</p>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => handleUnblockUser(u.clerk_id)}
+                      className="rounded-lg border border-gray-200 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 transition shadow-xs cursor-pointer"
+                    >
+                      Unblock
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-gray-100 flex justify-end">
+              <button
+                onClick={() => setShowBlockedModal(false)}
+                className="rounded-xl bg-gray-100 px-4 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-200 transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Female Rewarded Ad Modal */}
       <FemaleRewardModal

@@ -130,13 +130,6 @@ export function LandingPage() {
           <div className="flex items-center gap-3">
             {isSignedIn ? (
               <div className="flex items-center gap-3">
-                <Link
-                  to="/dashboard"
-                  className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700 shadow-sm transition inline-flex items-center gap-1.5"
-                >
-                  <span>Dashboard</span>
-                  <ArrowRightIcon className="h-3.5 w-3.5" />
-                </Link>
                 <UserButton afterSignOutUrl="/" />
               </div>
             ) : isClerkConfigured ? (

@@ -8,6 +8,54 @@ export type DevicePermissionStatus =
   | 'in_use'
   | 'unsupported'
 
+export type VideoFilterPreset = 'none' | 'beautify' | 'hd_sharp' | 'low_light' | 'studio_glow'
+
+export interface VideoFilterOption {
+  id: VideoFilterPreset
+  name: string
+  icon: string
+  description: string
+  cssFilter: string
+}
+
+export const VIDEO_FILTERS: VideoFilterOption[] = [
+  {
+    id: 'none',
+    name: 'Natural',
+    icon: '🌿',
+    description: 'Original camera feed',
+    cssFilter: 'none',
+  },
+  {
+    id: 'beautify',
+    name: 'Beautify Glow',
+    icon: '✨',
+    description: 'Smooth skin, warm tone & gentle soft glow',
+    cssFilter: 'contrast(105%) brightness(108%) saturate(112%)',
+  },
+  {
+    id: 'hd_sharp',
+    name: 'HD Ultra Sharp',
+    icon: '⚡',
+    description: 'Crisp details, high contrast & vivid clarity',
+    cssFilter: 'contrast(118%) brightness(105%) saturate(108%)',
+  },
+  {
+    id: 'low_light',
+    name: 'Night / Low Light',
+    icon: '💡',
+    description: 'Brightens dark or dim rooms so you look clear',
+    cssFilter: 'brightness(138%) contrast(116%) saturate(110%)',
+  },
+  {
+    id: 'studio_glow',
+    name: 'Studio Warmth',
+    icon: '🎨',
+    description: 'Warm lighting and cinematic saturation',
+    cssFilter: 'brightness(106%) saturate(120%) sepia(8%) contrast(108%)',
+  },
+]
+
 export type LocalMediaState = {
   cameraStatus: DevicePermissionStatus
   microphoneStatus: DevicePermissionStatus
@@ -27,6 +75,13 @@ export type LocalMediaState = {
   selectVideoDevice: (deviceId: string) => Promise<void>
   selectAudioDevice: (deviceId: string) => Promise<void>
   isAvatarVideoActive: boolean
+  facingMode: 'user' | 'environment'
+  flipCamera: () => Promise<void>
+  isFlippingCamera: boolean
+  hasMultipleCameras: boolean
+  videoFilter: VideoFilterPreset
+  setVideoFilter: (filter: VideoFilterPreset) => void
+  videoFilterCss: string
 }
 
 function stopStream(stream: MediaStream | null) {
@@ -143,8 +198,44 @@ export function useLocalMedia(): LocalMediaState {
     }
   })
 
+  // Facing mode state (front 'user' vs back 'environment' camera for WhatsApp style flip)
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user')
+  const [isFlippingCamera, setIsFlippingCamera] = useState(false)
+
+  // Video quality enhancement filter preset
+  const [videoFilter, setVideoFilterState] = useState<VideoFilterPreset>(() => {
+    try {
+      return (localStorage.getItem('rc_video_filter') as VideoFilterPreset) || 'none'
+    } catch {
+      return 'none'
+    }
+  })
+
+  const setVideoFilter = useCallback((preset: VideoFilterPreset) => {
+    setVideoFilterState(preset)
+    try {
+      localStorage.setItem('rc_video_filter', preset)
+    } catch {
+      // Ignore
+    }
+  }, [])
+
+  const videoFilterCss = useMemo(() => {
+    const found = VIDEO_FILTERS.find((f) => f.id === videoFilter)
+    return found ? found.cssFilter : 'none'
+  }, [videoFilter])
+
   const streamRef = useRef<MediaStream | null>(null)
   streamRef.current = stream
+
+  // Detect if phone/tablet or device has multiple cameras
+  const hasMultipleCameras = useMemo(() => {
+    if (videoDevices.length > 1) return true
+    if (typeof navigator !== 'undefined' && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
+      return true
+    }
+    return false
+  }, [videoDevices.length])
 
   // Refresh hardware device enumeration
   const enumerateAndVerifyDevices = useCallback(async () => {
@@ -196,25 +287,144 @@ export function useLocalMedia(): LocalMediaState {
     setIsAudioMuted((prev) => !prev)
   }, [stream])
 
+  // Robust toggle video without black screen or stuck frames
   const toggleVideo = useCallback(async () => {
-    if (!stream) return
+    const activeStream = streamRef.current
+    if (!activeStream) return
 
     if (!isVideoMuted) {
       // Mute local video
-      const videoTracks = stream.getVideoTracks()
+      const videoTracks = activeStream.getVideoTracks()
       videoTracks.forEach((track) => {
         track.enabled = false
       })
       setIsVideoMuted(true)
     } else {
       // Unmute local video
-      const videoTracks = stream.getVideoTracks()
+      const videoTracks = activeStream.getVideoTracks()
+      let hasLiveTrack = false
+
       videoTracks.forEach((track) => {
-        track.enabled = true
+        if (track.readyState === 'live') {
+          track.enabled = true
+          hasLiveTrack = true
+        }
       })
+
+      // If track was closed, stopped or inactive, re-acquire clean camera track
+      if (!hasLiveTrack || videoTracks.length === 0) {
+        try {
+          const freshMedia = await navigator.mediaDevices.getUserMedia({
+            video: selectedVideoDeviceId
+              ? { deviceId: { exact: selectedVideoDeviceId } }
+              : {
+                  facingMode: { ideal: facingMode },
+                  width: { ideal: 1280 },
+                  height: { ideal: 720 },
+                },
+          })
+
+          const freshTrack = freshMedia.getVideoTracks()[0]
+          if (freshTrack) {
+            videoTracks.forEach((t) => {
+              try {
+                t.stop()
+              } catch {}
+              activeStream.removeTrack(t)
+            })
+            activeStream.addTrack(freshTrack)
+          }
+        } catch (err) {
+          console.warn('[Media] Failed to re-acquire fresh track on unmute:', err)
+        }
+      }
+
+      // Re-emit new MediaStream reference so all video elements & senders re-bind and play
+      const refreshedStream = new MediaStream(activeStream.getTracks())
+      streamRef.current = refreshedStream
+      setStream(refreshedStream)
       setIsVideoMuted(false)
+      setCameraStatus('granted')
+      setIsAvatarVideoActive(false)
     }
-  }, [stream, isVideoMuted])
+  }, [facingMode, isVideoMuted, selectedVideoDeviceId])
+
+  // WhatsApp-style Flip Camera (Front <-> Back with instant track replacement)
+  const flipCamera = useCallback(async () => {
+    if (!navigator.mediaDevices?.getUserMedia) return
+    setIsFlippingCamera(true)
+
+    const nextMode = facingMode === 'user' ? 'environment' : 'user'
+    setFacingMode(nextMode)
+
+    try {
+      // Stop old video tracks
+      const currentTracks = streamRef.current?.getVideoTracks() || []
+      currentTracks.forEach((t) => {
+        try {
+          t.stop()
+        } catch {}
+        streamRef.current?.removeTrack(t)
+      })
+
+      // Switch device ID if enumerated
+      let targetDeviceId = ''
+      if (videoDevices.length > 1) {
+        const otherDev = videoDevices.find((d) => d.deviceId && d.deviceId !== selectedVideoDeviceId)
+        if (otherDev) {
+          targetDeviceId = otherDev.deviceId
+          setSelectedVideoDeviceId(targetDeviceId)
+        }
+      }
+
+      const videoConstraints: MediaTrackConstraints = targetDeviceId
+        ? { deviceId: { exact: targetDeviceId } }
+        : {
+            facingMode: { ideal: nextMode },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          }
+
+      const newMedia = await navigator.mediaDevices.getUserMedia({
+        video: videoConstraints,
+      })
+
+      const newTrack = newMedia.getVideoTracks()[0]
+      if (newTrack && streamRef.current) {
+        streamRef.current.addTrack(newTrack)
+        const updatedStream = new MediaStream(streamRef.current.getTracks())
+        streamRef.current = updatedStream
+        setStream(updatedStream)
+        setCameraStatus('granted')
+        setIsAvatarVideoActive(false)
+        setIsVideoMuted(false)
+      }
+    } catch (err) {
+      console.warn('[Media] Camera flip ideal constraint failed, trying basic facingMode:', err)
+      try {
+        const fallbackMedia = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: nextMode },
+        })
+        const fallbackTrack = fallbackMedia.getVideoTracks()[0]
+        if (fallbackTrack && streamRef.current) {
+          streamRef.current.addTrack(fallbackTrack)
+          const updatedStream = new MediaStream(streamRef.current.getTracks())
+          streamRef.current = updatedStream
+          setStream(updatedStream)
+          setCameraStatus('granted')
+          setIsAvatarVideoActive(false)
+          setIsVideoMuted(false)
+        }
+      } catch (fallbackErr) {
+        console.error('[Media] Camera flip error:', fallbackErr)
+      }
+    } finally {
+      setTimeout(() => {
+        setIsFlippingCamera(false)
+      }, 450)
+    }
+  }, [facingMode, selectedVideoDeviceId, videoDevices])
+
 
   // Request media with granular error detection and graceful fallbacks
   const requestMedia = useCallback(async () => {
@@ -515,5 +725,13 @@ export function useLocalMedia(): LocalMediaState {
     selectVideoDevice,
     selectAudioDevice,
     isAvatarVideoActive,
+    facingMode,
+    flipCamera,
+    isFlippingCamera,
+    hasMultipleCameras,
+    videoFilter,
+    setVideoFilter,
+    videoFilterCss,
   }
 }
+

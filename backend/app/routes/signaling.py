@@ -1,3 +1,4 @@
+import asyncio
 from collections import deque
 from uuid import uuid4
 
@@ -7,6 +8,35 @@ from app.db import users_collection
 from app.middleware.auth import verify_clerk_token_string
 
 router = APIRouter()
+
+
+# ============================================================
+# LIVE STATS ENDPOINT
+# ============================================================
+
+@router.get("/stats")
+@router.get("/signaling/stats")
+async def get_signaling_stats():
+    """
+    Get real-time live stats of connected users and queue from signaling server.
+    """
+    online_count = len(CLIENTS)
+    waiting_count = len(WAITING_CLIENTS)
+    active_calls = len(PEERS) // 2
+
+    total_users = 0
+    try:
+        total_users = await users_collection.count_documents({})
+    except Exception:
+        total_users = max(online_count, 1)
+
+    return {
+        "online_users": online_count,
+        "waiting_users": waiting_count,
+        "active_calls": active_calls,
+        "total_users": total_users,
+    }
+
 
 
 # ============================================================
@@ -45,6 +75,28 @@ async def send_json(client_id: str, payload: dict) -> bool:
         return True
     except Exception:
         return False
+
+
+async def broadcast_stats() -> None:
+    """
+    Broadcast live stats update to all active WebSocket connections.
+    """
+    try:
+        stats_msg = {
+            "type": "stats-update",
+            "online_users": len(CLIENTS),
+            "waiting_users": len(WAITING_CLIENTS),
+            "active_calls": len(PEERS) // 2,
+        }
+        for cid in list(CLIENTS.keys()):
+            try:
+                ws = CLIENTS.get(cid)
+                if ws:
+                    await ws.send_json(stats_msg)
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"[Signaling] broadcast_stats notice: {e}")
 
 
 def remove_from_waiting(client_id: str) -> None:
@@ -482,6 +534,9 @@ async def match_waiting_clients() -> None:
             },
         )
 
+    if matched_pairs:
+        asyncio.create_task(broadcast_stats())
+
 
 # ============================================================
 # QUEUE MANAGEMENT
@@ -504,6 +559,7 @@ async def enqueue_client(
         return
 
     WAITING_CLIENTS.append(client_id)
+    asyncio.create_task(broadcast_stats())
 
     await send_json(
         client_id,
@@ -561,6 +617,8 @@ async def disconnect_peer(
         and client_id in CLIENTS
     ):
         await enqueue_client(client_id)
+
+    asyncio.create_task(broadcast_stats())
 
 
 # ============================================================
@@ -660,6 +718,7 @@ async def handle_signaling_websocket(
             "client_id": client_id,
         },
     )
+    asyncio.create_task(broadcast_stats())
 
     try:
 
@@ -819,6 +878,7 @@ async def handle_signaling_websocket(
                 "answer",
                 "ice-candidate",
                 "chat-message",
+                "reaction",
             }:
 
                 await relay_to_peer(

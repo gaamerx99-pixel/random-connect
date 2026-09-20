@@ -12,6 +12,7 @@ interface SafeAuthContextType {
   isSignedIn: boolean
   user: any
   getToken: () => Promise<string | null>
+  signOut: () => Promise<void>
   isClerkConfigured: boolean
 }
 
@@ -20,11 +21,12 @@ const SafeAuthContext = createContext<SafeAuthContextType>({
   isSignedIn: false,
   user: null,
   getToken: async () => null,
+  signOut: async () => {},
   isClerkConfigured: false,
 })
 
 function InternalClerkConsumer({ children }: { children: React.ReactNode }) {
-  const { isLoaded, isSignedIn, getToken } = useClerkAuth()
+  const { isLoaded, isSignedIn, getToken, signOut } = useClerkAuth()
   const { user } = useClerkUser()
 
   return (
@@ -38,6 +40,13 @@ function InternalClerkConsumer({ children }: { children: React.ReactNode }) {
             return await getToken()
           } catch {
             return null
+          }
+        },
+        signOut: async () => {
+          try {
+            await signOut()
+          } catch (err) {
+            console.warn('SignOut error:', err)
           }
         },
         isClerkConfigured: true,
@@ -57,6 +66,7 @@ export function SafeAuthProvider({ children }: { children: React.ReactNode }) {
           isSignedIn: false,
           user: null,
           getToken: async () => null,
+          signOut: async () => {},
           isClerkConfigured: false,
         }}
       >

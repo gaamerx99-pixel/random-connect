@@ -615,6 +615,116 @@ async def block_user(
 
 
 # ============================================================
+# UNBLOCK USER
+# ============================================================
+
+@router.post("/unblock")
+async def unblock_user(
+    block: UserBlockCreate,
+    payload: dict = Depends(
+        verify_clerk_token
+    ),
+):
+    """
+    Unblock a previously blocked user.
+    """
+    blocker_id = payload.get("sub")
+
+    if not blocker_id:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid Clerk token.",
+        )
+
+    target_id = block.blocked_clerk_id
+
+    await users_collection.update_one(
+        {
+            "clerk_id": blocker_id
+        },
+        {
+            "$pull": {
+                "blocked_users": target_id
+            }
+        },
+    )
+
+    await blocks_collection.delete_many(
+        {
+            "blocker_id": blocker_id,
+            "blocked_id": target_id,
+        }
+    )
+
+    return {
+        "message": "User unblocked successfully.",
+        "unblocked_id": target_id,
+    }
+
+
+# ============================================================
+# GET BLOCKED USERS
+# ============================================================
+
+@router.get("/blocked")
+async def get_blocked_users(
+    payload: dict = Depends(
+        verify_clerk_token
+    ),
+):
+    """
+    Get real details of all users currently blocked by the logged-in user.
+    """
+    user_id = payload.get("sub")
+
+    if not user_id:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid Clerk token.",
+        )
+
+    user = await users_collection.find_one({"clerk_id": user_id})
+    if not user:
+        return {"blocked_users": []}
+
+    blocked_ids = user.get("blocked_users", [])
+    if not isinstance(blocked_ids, list) or not blocked_ids:
+        return {"blocked_users": []}
+
+    blocked_profiles_cursor = users_collection.find(
+        {"clerk_id": {"$in": blocked_ids}}
+    )
+    blocked_profiles = await blocked_profiles_cursor.to_list(length=100)
+
+    found_map = {}
+    for p in blocked_profiles:
+        cid = p.get("clerk_id")
+        if cid:
+            found_map[cid] = {
+                "clerk_id": cid,
+                "name": p.get("name") or "Stranger",
+                "image": p.get("image") or "",
+                "country": p.get("country") or "India",
+                "gender": p.get("gender") or "anyone",
+            }
+
+    result = []
+    for bid in blocked_ids:
+        if bid in found_map:
+            result.append(found_map[bid])
+        else:
+            result.append({
+                "clerk_id": bid,
+                "name": f"User ({bid[:8]}...)",
+                "image": "",
+                "country": "Unknown",
+                "gender": "anyone",
+            })
+
+    return {"blocked_users": result}
+
+
+# ============================================================
 # MOCK / RANDOM TEST USER PROFILES
 # ============================================================
 

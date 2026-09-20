@@ -17,6 +17,13 @@ export interface PeerProfile {
   interests?: string[]
 }
 
+export interface InCallReaction {
+  id: string
+  emoji: string
+  sender: 'me' | 'peer'
+  x: number
+}
+
 export type WebRtcSignalingState = {
   chatMessages: ChatMessageItem[]
   errorMessage: string | null
@@ -37,6 +44,8 @@ export type WebRtcSignalingState = {
   rewardRequired: boolean
   rewardRequiredMessage: string | null
   clearRewardRequired: () => void
+  reactions: InCallReaction[]
+  sendReaction: (emoji: string) => void
 }
 
 // Generate a unique session identifier for guest / multi-tab matching
@@ -52,114 +61,6 @@ function getGuestSessionId(): string {
     return 'guest_' + Math.random().toString(36).substring(2, 10)
   }
 }
-
-// Create a synthetic animated video stream for simulated bot testing
-function createSimulatedMediaStream(profileName: string, avatarUrl?: string): MediaStream {
-  const canvas = document.createElement('canvas')
-  canvas.width = 640
-  canvas.height = 480
-  const ctx = canvas.getContext('2d')
-
-  let frame = 0
-  let imgLoaded = false
-  const img = new Image()
-  img.crossOrigin = 'anonymous'
-  if (avatarUrl) {
-    img.src = avatarUrl
-    img.onload = () => { imgLoaded = true }
-  }
-
-  function draw() {
-    if (!ctx) return
-    frame++
-
-    // Background gradient
-    const gradient = ctx.createLinearGradient(0, 0, 640, 480)
-    gradient.addColorStop(0, '#0f172a')
-    gradient.addColorStop(0.5, '#1e1b4b')
-    gradient.addColorStop(1, '#0f172a')
-    ctx.fillStyle = gradient
-    ctx.fillRect(0, 0, 640, 480)
-
-    // Animated glow circle
-    const radius = 90 + Math.sin(frame * 0.05) * 8
-    ctx.save()
-    ctx.beginPath()
-    ctx.arc(320, 200, radius, 0, Math.PI * 2)
-    ctx.fillStyle = 'rgba(99, 102, 241, 0.25)'
-    ctx.fill()
-    ctx.lineWidth = 3
-    ctx.strokeStyle = 'rgba(129, 140, 248, 0.8)'
-    ctx.stroke()
-    ctx.restore()
-
-    // Avatar image or initials
-    if (imgLoaded) {
-      ctx.save()
-      ctx.beginPath()
-      ctx.arc(320, 200, 80, 0, Math.PI * 2)
-      ctx.clip()
-      ctx.drawImage(img, 240, 120, 160, 160)
-      ctx.restore()
-    } else {
-      ctx.save()
-      ctx.fillStyle = '#4f46e5'
-      ctx.beginPath()
-      ctx.arc(320, 200, 80, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.fillStyle = '#ffffff'
-      ctx.font = 'bold 48px sans-serif'
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText(profileName.charAt(0).toUpperCase() || 'S', 320, 200)
-      ctx.restore()
-    }
-
-    // Name text
-    ctx.fillStyle = '#ffffff'
-    ctx.font = 'bold 22px sans-serif'
-    ctx.textAlign = 'center'
-    ctx.fillText(profileName, 320, 320)
-
-    // Live Badge
-    ctx.fillStyle = '#10b981'
-    ctx.beginPath()
-    ctx.arc(280, 360, 6, 0, Math.PI * 2)
-    ctx.fill()
-
-    ctx.fillStyle = '#94a3b8'
-    ctx.font = '14px sans-serif'
-    ctx.textAlign = 'left'
-    ctx.fillText('Live Simulated Stranger (Test Mode)', 295, 365)
-
-    requestAnimationFrame(draw)
-  }
-
-  draw()
-
-  const canvasStream = canvas.captureStream(30)
-
-  // Add dummy silent audio track
-  try {
-    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
-    const osc = audioCtx.createOscillator()
-    const gain = audioCtx.createGain()
-    gain.gain.value = 0 // silent
-    osc.connect(gain)
-    const dst = audioCtx.createMediaStreamDestination()
-    gain.connect(dst)
-    osc.start()
-    const audioTrack = dst.stream.getAudioTracks()[0]
-    if (audioTrack) {
-      canvasStream.addTrack(audioTrack)
-    }
-  } catch (e) {
-    console.warn('AudioContext not supported for test stream', e)
-  }
-
-  return canvasStream
-}
-
 
 const peerConnectionConfig: RTCConfiguration = {
   iceServers: [
@@ -226,10 +127,9 @@ export function useWebRtcSignaling(
   const [searchSeconds, setSearchSeconds] = useState(0)
   const [timeoutLimit, setTimeoutLimit] = useState(30) // default 30s
   const [isTimedOut, setIsTimedOut] = useState(false)
-  const [isTestMode, setIsTestMode] = useState(false)
   const [rewardRequired, setRewardRequired] = useState(false)
   const [rewardRequiredMessage, setRewardRequiredMessage] = useState<string | null>(null)
-  const botReplyTimerRef = useRef<any>(null)
+  const [reactions, setReactions] = useState<InCallReaction[]>([])
 
   const clearRewardRequired = useCallback(() => {
     setRewardRequired(false)
@@ -243,7 +143,7 @@ export function useWebRtcSignaling(
   useEffect(() => {
     let interval: any = null
 
-    if (isSearching && !isTestMode && (signalingStatus === 'waiting' || signalingStatus === 'connecting')) {
+    if (isSearching && (signalingStatus === 'waiting' || signalingStatus === 'connecting')) {
       interval = setInterval(() => {
         setSearchSeconds((prev) => {
           const next = prev + 1
@@ -263,7 +163,7 @@ export function useWebRtcSignaling(
     return () => {
       if (interval) clearInterval(interval)
     }
-  }, [isSearching, isTestMode, signalingStatus, timeoutLimit])
+  }, [isSearching, signalingStatus, timeoutLimit])
 
 
   // ============================================================
@@ -384,6 +284,28 @@ export function useWebRtcSignaling(
       return false
     },
     [],
+  )
+
+  // ============================================================
+  // IN-CALL EMOJI REACTIONS
+  // ============================================================
+
+  const sendReaction = useCallback(
+    (emoji: string) => {
+      const reactionItem: InCallReaction = {
+        id: String(Date.now() + Math.random()),
+        emoji,
+        sender: 'me',
+        x: Math.floor(Math.random() * 60) + 20,
+      }
+      setReactions((prev) => [...prev.slice(-15), reactionItem])
+
+      sendMessage({
+        type: 'reaction',
+        emoji,
+      })
+    },
+    [sendMessage],
   )
 
   // ============================================================
@@ -1057,6 +979,23 @@ export function useWebRtcSignaling(
           }
 
           // ----------------------------------------------------
+          // Live In-Call Reaction
+          // ----------------------------------------------------
+
+          if (
+            message.type === 'reaction'
+          ) {
+            const reactionItem: InCallReaction = {
+              id: String(Date.now() + Math.random()),
+              emoji: message.emoji || '❤️',
+              sender: 'peer',
+              x: Math.floor(Math.random() * 60) + 20,
+            }
+            setReactions((prev) => [...prev.slice(-15), reactionItem])
+            return
+          }
+
+          // ----------------------------------------------------
           // Peer disconnected
           // ----------------------------------------------------
 
@@ -1188,88 +1127,6 @@ export function useWebRtcSignaling(
   }, [handleMessage])
 
   // ============================================================
-  // SIMULATED TEST MATCH (SOLO TESTING MODE)
-  // ============================================================
-
-  const SIMULATED_PROFILES: PeerProfile[] = [
-    {
-      clerk_id: 'mock_sim_1',
-      name: 'Riya Sharma',
-      gender: 'female',
-      age: 22,
-      country: 'India',
-      city: 'Mumbai',
-      interests: ['Music', 'Travel', 'Photography'],
-      image: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&auto=format&fit=crop&q=80',
-    },
-    {
-      clerk_id: 'mock_sim_2',
-      name: 'Aarav Patel',
-      gender: 'male',
-      age: 24,
-      country: 'India',
-      city: 'Ahmedabad',
-      interests: ['Tech', 'Gaming', 'Coding'],
-      image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80',
-    },
-    {
-      clerk_id: 'mock_sim_3',
-      name: 'Sneha Verma',
-      gender: 'female',
-      age: 21,
-      country: 'India',
-      city: 'Delhi',
-      interests: ['Dancing', 'Art', 'Movies'],
-      image: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80',
-    },
-    {
-      clerk_id: 'mock_sim_4',
-      name: 'Rohit Mehta',
-      gender: 'male',
-      age: 25,
-      country: 'India',
-      city: 'Bengaluru',
-      interests: ['Fitness', 'Startups', 'Cricket'],
-      image: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&auto=format&fit=crop&q=80',
-    },
-  ]
-
-  const BOT_REPLIES = [
-    'Hey! How are you doing today?',
-    'Nice to connect with you on RandomConnect!',
-    'Your audio and video look crisp and smooth!',
-    'Where are you connecting from?',
-    'Haha, that sounds awesome! 😄',
-    'Nice talking to you! The WebRTC test connection is working perfectly.',
-  ]
-
-  const startTestMatch = useCallback(() => {
-    console.log('[Signaling] Starting simulated test match...')
-    closePeerConnection()
-
-    // Pick random simulated profile
-    const randomProfile = SIMULATED_PROFILES[Math.floor(Math.random() * SIMULATED_PROFILES.length)]
-    const mockStream = createSimulatedMediaStream(randomProfile.name, randomProfile.image)
-
-    setIsTestMode(true)
-    setIsSearching(false)
-    setIsTimedOut(false)
-    setErrorMessage(null)
-    setPeerProfile(randomProfile)
-    setRemoteStream(mockStream)
-    setSignalingStatus('connected')
-
-    // Initial greeting in chat
-    const initialGreeting: ChatMessageItem = {
-      id: String(Date.now()),
-      sender: 'stranger',
-      text: `Hello! I'm ${randomProfile.name} from ${randomProfile.city}, ${randomProfile.country}. Nice to meet you! 👋`,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    }
-    setChatMessages([initialGreeting])
-  }, [closePeerConnection])
-
-  // ============================================================
   // CHAT
   // ============================================================
 
@@ -1311,25 +1168,6 @@ export function useWebRtcSignaling(
           ],
         )
 
-        // Handle Test Mode Bot Reply
-        if (isTestMode) {
-          if (botReplyTimerRef.current) clearTimeout(botReplyTimerRef.current)
-          botReplyTimerRef.current = setTimeout(() => {
-            const randomReply = BOT_REPLIES[Math.floor(Math.random() * BOT_REPLIES.length)]
-            const botItem: ChatMessageItem = {
-              id: String(Date.now() + Math.random()),
-              sender: 'stranger',
-              text: randomReply,
-              timestamp: new Date().toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              }),
-            }
-            setChatMessages((prev) => [...prev, botItem])
-          }, 1200)
-          return
-        }
-
         const sent =
           sendMessage({
             type: 'chat-message',
@@ -1342,7 +1180,7 @@ export function useWebRtcSignaling(
           )
         }
       },
-      [isTestMode, sendMessage],
+      [sendMessage],
     )
 
   // ============================================================
@@ -1355,30 +1193,9 @@ export function useWebRtcSignaling(
         '[Signaling] Skipping stranger...',
       )
 
-      if (botReplyTimerRef.current) {
-        clearTimeout(botReplyTimerRef.current)
-      }
-
       closePeerConnection()
       setChatMessages([])
       setPeerProfile(null)
-
-      if (isTestMode) {
-        // In test mode, switch to another test profile seamlessly
-        const randomProfile = SIMULATED_PROFILES[Math.floor(Math.random() * SIMULATED_PROFILES.length)]
-        const mockStream = createSimulatedMediaStream(randomProfile.name, randomProfile.image)
-        setPeerProfile(randomProfile)
-        setRemoteStream(mockStream)
-        setChatMessages([
-          {
-            id: String(Date.now()),
-            sender: 'stranger',
-            text: `Hey! I am ${randomProfile.name} from ${randomProfile.city}. How's it going? ✨`,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          },
-        ])
-        return
-      }
 
       setIsSearching(true)
       setIsTimedOut(false)
@@ -1393,7 +1210,6 @@ export function useWebRtcSignaling(
       })
     }, [
       closePeerConnection,
-      isTestMode,
       sendMessage,
     ])
 
@@ -1407,10 +1223,6 @@ export function useWebRtcSignaling(
         '[Signaling] Leaving room...',
       )
 
-      if (botReplyTimerRef.current) {
-        clearTimeout(botReplyTimerRef.current)
-      }
-
       sendMessage({
         type: 'leave',
       })
@@ -1423,7 +1235,6 @@ export function useWebRtcSignaling(
 
       setChatMessages([])
       setIsSearching(false)
-      setIsTestMode(false)
       setIsTimedOut(false)
       setSearchSeconds(0)
 
@@ -1471,10 +1282,6 @@ export function useWebRtcSignaling(
         '[Signaling] Starting matchmaking...',
       )
 
-      if (botReplyTimerRef.current) {
-        clearTimeout(botReplyTimerRef.current)
-      }
-
       // --------------------------------------------------------
       // Reset current state
       // --------------------------------------------------------
@@ -1483,7 +1290,6 @@ export function useWebRtcSignaling(
       setChatMessages([])
       setPeerProfile(null)
       setRemoteStream(null)
-      setIsTestMode(false)
       setIsTimedOut(false)
       setSearchSeconds(0)
       setIsSearching(true)
@@ -1724,10 +1530,6 @@ export function useWebRtcSignaling(
         '[Media] Cleaning up camera and microphone...',
       )
 
-      if (botReplyTimerRef.current) {
-        clearTimeout(botReplyTimerRef.current)
-      }
-
       websocketGenerationRef.current += 1
 
       const websocket =
@@ -1784,6 +1586,22 @@ export function useWebRtcSignaling(
   }, [])
 
   // ============================================================
+  // LEGACY / TEST MODE SHIM (REDIRECTS TO REAL MATCHMAKING)
+  // ============================================================
+
+  const findStrangerRef = useRef<() => void>(findStranger)
+  useEffect(() => {
+    findStrangerRef.current = findStranger
+  }, [findStranger])
+
+  const startTestMatch = useCallback(() => {
+    console.log('[Signaling] Bot simulation disabled. Matching with real users...')
+    if (findStrangerRef.current) {
+      findStrangerRef.current()
+    }
+  }, [])
+
+  // ============================================================
   // RETURN
   // ============================================================
 
@@ -1803,9 +1621,12 @@ export function useWebRtcSignaling(
     setTimeoutLimit,
     isTimedOut,
     startTestMatch,
-    isTestMode,
+    isTestMode: false,
     rewardRequired,
     rewardRequiredMessage,
     clearRewardRequired,
+    reactions,
+    sendReaction,
   }
 }
+
